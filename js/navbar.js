@@ -1,12 +1,13 @@
 // ============================================================
 // navbar.js
-// Version : 1.4
+// Version : 1.5
 // Updated : 2026-04-02
 // Changes :
 //   v1.3 — CORS FIX: switched fetch from POST to GET + URLSearchParams.
-//   v1.4 — Debug: if r.json() throws (GAS returned HTML error page
-//           instead of JSON), catch the raw text and throw it as the
-//           error message so it appears on screen via index.html catch.
+//   v1.4 — Debug: surface raw GAS response if JSON parse fails.
+//   v1.5 — Fallback: _url getter hardcodes the GAS URL so API calls
+//           work even if config.js fails to load (path mismatch, cache,
+//           etc.). Error message improved to show what POF_CONFIG is.
 // ============================================================
 //
 // navbar.js — PO Financing Portal v4
@@ -19,10 +20,15 @@
 //   3. portal-specific inline <script>
 // ============================================================
 
+// Hardcoded fallback — used if config.js fails to load.
+// Keep in sync with POF_CONFIG.WEB_APP_URL in config.js.
+const _GAS_URL = 'https://script.google.com/macros/s/AKfycbwB8LVdpQPd3vCfTwXC9XdswR4xS0W7fk9wFUSO4MXNIPO3_8-FKJhVyUvvKXhuFnjEmA/exec';
+
 // ── API caller ────────────────────────────────────────────────
 const API = {
   get _url() {
-    return window.POF_CONFIG && window.POF_CONFIG.WEB_APP_URL;
+    // Prefer config.js value; fall back to hardcoded constant above.
+    return (window.POF_CONFIG && window.POF_CONFIG.WEB_APP_URL) || _GAS_URL;
   },
   token: null,
 
@@ -33,7 +39,12 @@ const API = {
   async call(action, params = {}) {
     const url = this._url;
     if (!url || url === 'YOUR_WEB_APP_URL_HERE') {
-      throw new Error('WEB_APP_URL not configured. Edit js/config.js.');
+      // Show diagnostic info so the problem is obvious on screen
+      throw new Error(
+        'WEB_APP_URL not configured. ' +
+        'POF_CONFIG=' + JSON.stringify(window.POF_CONFIG) + '. ' +
+        'Edit js/config.js or update _GAS_URL in navbar.js.'
+      );
     }
     // v1.3 CORS FIX: GET + URLSearchParams, no custom headers, redirect:follow.
     // POST triggers a preflight; GAS 302-redirects it; redirect target has no
