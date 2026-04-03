@@ -1,13 +1,12 @@
 // ============================================================
 // navbar.js
-// Version : 1.5
+// Version : 1.6
 // Updated : 2026-04-02
 // Changes :
-//   v1.3 — CORS FIX: switched fetch from POST to GET + URLSearchParams.
-//   v1.4 — Debug: surface raw GAS response if JSON parse fails.
-//   v1.5 — Fallback: _url getter hardcodes the GAS URL so API calls
-//           work even if config.js fails to load (path mismatch, cache,
-//           etc.). Error message improved to show what POF_CONFIG is.
+//   v1.5 — Hardcoded _GAS_URL fallback if config.js fails to load.
+//   v1.6 — Session.load() catch: only logout on SESSION_EXPIRED.
+//           Previously any error (network blip, etc.) called logout()
+//           causing immediate redirect to login right after OTP verify.
 // ============================================================
 //
 // navbar.js — PO Financing Portal v4
@@ -111,7 +110,14 @@ const Session = {
       this._ctx = ctx;
       sessionStorage.setItem('pof_ctx', JSON.stringify(ctx));
       return ctx;
-    } catch(e) { this.logout(); return null; }
+    } catch(e) {
+      // Only force logout if session is definitively expired.
+      // Other errors (network blip, permission error) must not log the user out.
+      if (e.message === 'Session expired' || e.message === 'SESSION_EXPIRED') {
+        this.logout();
+      }
+      return null;
+    }
   },
 
   get() { return this._ctx; },
