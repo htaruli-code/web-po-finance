@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<!-- ============================================================
+     investor.html
+     Version : 1.2
+     Updated : 2026-04-02
+     Changes : v1.1 - Added version header; cache-busting ?v=1.3
+               on all shared asset references.
+     ============================================================ -->
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Investor Portal — PO Financing Portal v4</title>
+  <link rel="stylesheet" href="/css/styles.css?v=1.3">
+  <script src="/js/config.js?v=1.3"></script>
+  <script src="/js/navbar.js?v=1.3"></script>
+</head>
+<body>
+<script>
+// Dynamic platform name injection from POF_CONFIG
+document.addEventListener('DOMContentLoaded', function() {
+  const name = window.POF_CONFIG && window.POF_CONFIG.PLATFORM_NAME;
+  if (name) {
+    document.querySelectorAll('.platform-name').forEach(el => el.textContent = name);
+    document.querySelectorAll('.platform-currency').forEach(el => el.textContent = window.POF_CONFIG.CURRENCY || 'MYR');
+    document.querySelectorAll('.platform-timezone').forEach(el => el.textContent = window.POF_CONFIG.TIMEZONE || '');
+    document.title = document.title.replace('PO Financing Portal v4', name);
+  }
+});
+</script>
+
+<div class="container">
+  <div class="page-header">
+    <h1>Investor Portal</h1>
+    <span class="badge badge-success">Capital & Returns View</span>
+  </div>
+
+  <!-- Investor selector -->
+  <div class="card">
+    <div class="form-body" style="display:flex;gap:16px;align-items:flex-end">
+      <div style="flex:1">
+        <label>Investor ID</label>
+        <select id="inv-selector" class="input" onchange="loadPortfolio()">
+          <option value="INV-001">INV-001 — Bumiputra Capital Partners</option>
+          <option value="INV-002">INV-002 — Nexus Growth Fund</option>
+          <option value="INV-003">INV-003 — Coastal Ventures</option>
+        </select>
+      </div>
+      <button class="btn btn-sm" onclick="loadPortfolio()">↻ Refresh</button>
+    </div>
+  </div>
+
+  <!-- Portfolio KPIs -->
+  <div class="card-grid-4" id="kpi-grid">
+    <div class="kpi-card blue"><div class="kpi-label">Committed Capital</div><div class="kpi-value" id="kpi-committed">—</div></div>
+    <div class="kpi-card purple"><div class="kpi-label">Capital Deployed</div><div class="kpi-value" id="kpi-deployed">—</div></div>
+    <div class="kpi-card green"><div class="kpi-label">Total Returns</div><div class="kpi-value" id="kpi-returns">—</div></div>
+    <div class="kpi-card orange"><div class="kpi-label">ROI</div><div class="kpi-value" id="kpi-roi">—</div></div>
+  </div>
+
+  <div class="two-col">
+    <!-- Capital summary -->
+    <div class="card">
+      <div class="card-header">Capital Summary</div>
+      <table class="table" id="capital-table">
+        <tbody>
+          <tr><td>Committed Capital</td><td class="mono" id="s-committed">—</td></tr>
+          <tr><td>Called Capital</td><td class="mono" id="s-called">—</td></tr>
+          <tr><td>Uncalled (Available)</td><td class="mono text-green" id="s-uncalled">—</td></tr>
+          <tr><td>Net Currently Deployed</td><td class="mono text-orange" id="s-deployed">—</td></tr>
+          <tr><td>Total Returned to Date</td><td class="mono text-green" id="s-returned">—</td></tr>
+          <tr><td>Fee Income Earned</td><td class="mono" id="s-fee">—</td></tr>
+          <tr><td>ROI %</td><td class="mono" id="s-roi">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Balance history -->
+    <div class="card">
+      <div class="card-header">Balance History (Last 10)</div>
+      <table class="table" id="balance-table">
+        <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Running Bal</th></tr></thead>
+        <tbody id="balance-tbody"><tr><td colspan="4">Select an investor</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Capital calls -->
+  <div class="card">
+    <div class="card-header">Capital Calls History</div>
+    <table class="table">
+      <thead><tr><th>Call ID</th><th>Invoice</th><th>Amount</th><th>Status</th><th>Call Date</th><th>Notes</th></tr></thead>
+      <tbody id="calls-tbody"><tr><td colspan="6">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- Repayment distributions -->
+  <div class="card">
+    <div class="card-header">Return Distributions</div>
+    <table class="table">
+      <thead><tr><th>Invoice</th><th>Principal Returned</th><th>Fee Income</th><th>Total</th><th>Date</th></tr></thead>
+      <tbody id="dist-tbody"><tr><td colspan="5">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+
+const post = (action,params) => fetch(API,{method:'POST',body:JSON.stringify({action,params})}).then(r=>r.json());
+const fmtM = n => 'MYR ' + Number(n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+async function loadPortfolio() {
+  const investorId = document.getElementById('inv-selector').value;
+
+  const [portfolioRes, balRes] = await Promise.all([
+    post('GET_INVESTOR_PORTFOLIO', { investorId }),
+    post('GET_CLIENT_BALANCE', { clientId: '__investor__' }).catch(() => ({ history: [] })),
+  ]);
+
+  const p = portfolioRes;
+  if (!p || !p.investor_name) {
+    document.getElementById('kpi-committed').textContent = 'No data';
+    return;
+  }
+
+  // KPIs
+  document.getElementById('kpi-committed').textContent = fmtM(p.committed_capital);
+  document.getElementById('kpi-deployed').textContent  = fmtM(p.net_deployed);
+  document.getElementById('kpi-returns').textContent   = fmtM(p.fee_income);
+  document.getElementById('kpi-roi').textContent       = (p.roi_pct||0).toFixed(2) + '%';
+
+  // Summary table
+  document.getElementById('s-committed').textContent = fmtM(p.committed_capital);
+  document.getElementById('s-called').textContent    = fmtM(p.called_capital);
+  document.getElementById('s-uncalled').textContent  = fmtM(p.uncalled_capital);
+  document.getElementById('s-deployed').textContent  = fmtM(p.net_deployed);
+  document.getElementById('s-returned').textContent  = fmtM(p.total_returned);
+  document.getElementById('s-fee').textContent       = fmtM(p.fee_income);
+  document.getElementById('s-roi').textContent       = (p.roi_pct||0).toFixed(2) + '%';
+
+  // Balance ledger (investor balance)
+  const balRows = (balRes.history || []).slice(-10).reverse();
+  document.getElementById('balance-tbody').innerHTML = balRows.length ?
+    balRows.map(h => `
+      <tr>
+        <td>${h.created_at}</td>
+        <td><span class="badge badge-type">${h.txn_type}</span></td>
+        <td class="mono ${h.amount<0?'text-green':'text-orange'}">${Number(h.amount).toLocaleString('en-MY',{minimumFractionDigits:2})}</td>
+        <td class="mono"><strong>${Number(h.running_balance).toLocaleString('en-MY',{minimumFractionDigits:2})}</strong></td>
+      </tr>`).join('') :
+    '<tr><td colspan="4" style="color:#A0AEC0;text-align:center">No balance entries yet</td></tr>';
+}
+
+// Placeholder capital calls and distributions
+document.getElementById('calls-tbody').innerHTML =
+  '<tr><td colspan="6" style="color:#A0AEC0;text-align:center">Capital calls will appear here after invoices are disbursed</td></tr>';
+document.getElementById('dist-tbody').innerHTML =
+  '<tr><td colspan="5" style="color:#A0AEC0;text-align:center">Distributions will appear here after client repayments</td></tr>';
+
+loadPortfolio();
+</script>
+</body>
+</html>

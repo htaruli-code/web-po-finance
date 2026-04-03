@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<!-- ============================================================
+     client.html
+     Version : 1.2
+     Updated : 2026-04-02
+     Changes :
+       Fix CH1 - init(): CLIENT users bypassed refreshOverview() due to
+         GET_ALL_CLIENTS permission error swallowing the call. CLIENT users
+         now branch early, set CLIENT_ID from ctx.clientId, and call
+         refreshOverview() directly without entering the Ops path.
+       Fix CH2 - init(): date range defaults moved before the user-type
+         branch so they are always set regardless of user role.
+     ============================================================ -->
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Client Portal — PO Financing Portal v4</title>
+  <link rel="stylesheet" href="/css/styles.css?v=1.3">
+  <script src="/js/config.js?v=1.3"></script>
+  <script src="/js/navbar.js?v=1.3"></script>
+  <style>
+    /* ── Invoice Cost Breakdown ─────────────────────────── */
+    .breakdown-section {
+      margin-top: 20px;
+    }
+    .breakdown-section h3 {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--mgray);
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .block-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 8px;
+      align-items: start;
+      padding: 10px 0;
+      border-bottom: 1px solid #f0f3f7;
+    }
+    .block-row:last-child { border-bottom: none; }
+    .block-label { font-weight: 600; font-size: 12.5px; color: var(--navy); }
+    .block-calc  { font-size: 11.5px; color: var(--mgray); margin-top: 2px; }
+    .block-type-tag {
+      font-size: 10px; font-weight: 700; padding: 2px 7px;
+      border-radius: 10px; background: var(--lgray); color: var(--navy2);
+      white-space: nowrap; align-self: center;
+    }
+    .block-type-tag.flat   { background: #EBF4FB; color: #1A6FA8; }
+    .block-type-tag.unit   { background: #E8F8F5; color: #148F77; }
+    .block-type-tag.min    { background: #FEF6E7; color: #C07000; }
+    .block-fee {
+      font-size: 13.5px; font-weight: 700; color: var(--amber);
+      text-align: right; white-space: nowrap; align-self: center;
+    }
+    .repay-row {
+      display: grid;
+      grid-template-columns: 80px 1fr 1fr 1fr;
+      gap: 6px;
+      padding: 8px 0;
+      border-bottom: 1px solid #f0f3f7;
+      font-size: 12px;
+      align-items: center;
+    }
+    .repay-row:last-child { border-bottom: none; }
+    .repay-day  { font-weight: 700; color: var(--navy); }
+    .repay-amt  { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+    .repay-bal  { font-weight: 700; text-align: right; color: var(--navy); font-variant-numeric: tabular-nums; }
+    .repay-note { font-size: 11px; color: var(--mgray); }
+    .summary-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 12.5px;
+    }
+    .summary-row:last-child { border-bottom: none; }
+    .summary-row.total {
+      padding: 10px 0; margin-top: 4px;
+      border-top: 2px solid var(--navy); border-bottom: none;
+      font-size: 14px; font-weight: 700; color: var(--navy);
+    }
+    .residual-note {
+      background: #E8F8F5; border-left: 3px solid var(--teal);
+      padding: 8px 12px; border-radius: 6px; font-size: 11.5px;
+      color: #0e6655; margin: 10px 0;
+    }
+
+    /* ── Print / PDF styles ─────────────────────────────── */
+    @media print {
+      body { background: #fff !important; font-size: 11pt; color: #000; }
+      .sidebar, .topbar, #toast,
+      .modal-footer, .btn, .nav-link,
+      #tab-overview, #tab-invoices, #tab-history,
+      #tab-reserve, #tab-submit { display: none !important; }
+      .main-content { margin-left: 0 !important; padding: 0 !important; }
+      .modal-overlay {
+        position: static !important; background: none !important;
+        display: block !important; padding: 0 !important;
+      }
+      .modal {
+        max-width: 100% !important; max-height: none !important;
+        box-shadow: none !important; border-radius: 0 !important;
+      }
+      .modal-header { border-bottom: 2px solid #000 !important; }
+      .modal-body   { padding: 16px 0 !important; }
+      .app-layout   { display: block !important; }
+      .pdf-print-header { display: block !important; }
+      table { page-break-inside: avoid; }
+      .breakdown-section { page-break-inside: avoid; }
+    }
+    .pdf-print-header { display: none; }
+  </style>
+</head>
+<body>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const name = window.POF_CONFIG && window.POF_CONFIG.PLATFORM_NAME;
+  if (name) {
+    document.querySelectorAll('.platform-name').forEach(el => el.textContent = name);
+    document.querySelectorAll('.platform-currency').forEach(el => el.textContent = window.POF_CONFIG.CURRENCY || 'MYR');
+    document.title = document.title.replace('PO Financing Portal v4', name);
+  }
+});
+</script>
+
+<div class="app-layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <h1><span class="platform-name">PO Financing Portal v4</span></h1>
+      <small>Client Portal</small>
+    </div>
+    <div style="padding:12px 16px;border-top:1px solid rgba(255,255,255,0.12)">
+      <div id="user-badge"></div>
+    </div>
+    <div class="sidebar-section">
+      <button class="nav-link active" onclick="showTab('overview')">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1" stroke-width="2"/><rect x="14" y="3" width="7" height="7" rx="1" stroke-width="2"/><rect x="3" y="14" width="7" height="7" rx="1" stroke-width="2"/><rect x="14" y="14" width="7" height="7" rx="1" stroke-width="2"/></svg>
+        <span class="nav-label">Overview</span>
+      </button>
+      <button class="nav-link" onclick="showTab('invoices')">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-width="2"/></svg>
+        <span class="nav-label">My Invoices</span>
+      </button>
+      <button class="nav-link" onclick="showTab('history')">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="2"/></svg>
+        <span class="nav-label">Transaction History</span>
+      </button>
+      <button class="nav-link" onclick="showTab('reserve')">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2z" stroke-width="2"/></svg>
+        <span class="nav-label">Reserve Funds</span>
+      </button>
+      <button class="nav-link" onclick="showTab('submit')">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 4v16m8-8H4" stroke-width="2"/></svg>
+        <span class="nav-label">Submit Invoice</span>
+      </button>
+    </div>
+    <div style="padding:12px 16px;border-top:1px solid rgba(255,255,255,0.1);margin-top:auto">
+      <div style="font-size:10px;color:rgba(255,255,255,0.4);margin-bottom:6px;text-transform:uppercase;font-weight:700">Active Client</div>
+      <select id="client-selector" style="width:100%;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;padding:5px 8px;border-radius:6px;font-size:12px" onchange="onClientChange()">
+        <option value="">Loading…</option>
+      </select>
+    </div>
+  </aside>
+
+  <main class="main-content">
+    <div id="toast"></div>
+
+    <!-- OVERVIEW TAB -->
+    <div id="tab-overview">
+      <div class="topbar">
+        <div>
+          <h1 id="client-name-h1">Client Overview</h1>
+          <p class="text-muted mt-8" style="font-size:12px" id="client-meta">Select a client to begin</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="refreshOverview()">↻ Refresh</button>
+      </div>
+      <div class="grid-4 mb-16">
+        <div class="kpi"><div class="kpi-label">Credit Limit</div><div class="kpi-value" id="ov-limit">—</div><div class="kpi-sub">approved facility</div></div>
+        <div class="kpi amber"><div class="kpi-label">Current Exposure</div><div class="kpi-value" id="ov-exposure">—</div><div class="kpi-sub" id="ov-util">—</div></div>
+        <div class="kpi green"><div class="kpi-label">Available Limit</div><div class="kpi-value" id="ov-available">—</div><div class="kpi-sub">ready to draw</div></div>
+        <div class="kpi teal"><div class="kpi-label">Reserve Balance</div><div class="kpi-value" id="ov-reserve">—</div><div class="kpi-sub" id="ov-pending-reqs">—</div></div>
+      </div>
+      <div class="card mb-16">
+        <div class="card-header"><span class="card-title">Credit Utilisation</span></div>
+        <div style="margin-bottom:6px;display:flex;justify-content:space-between;font-size:12px">
+          <span id="util-label">—</span><span id="util-pct" class="text-bold">—</span>
+        </div>
+        <div class="prog-bar"><div class="prog-fill" id="util-bar" style="width:0%"></div></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Active Invoices</span><button class="btn btn-ghost btn-sm" onclick="showTab('invoices')">View All</button></div>
+          <div class="tbl-wrap">
+            <table><thead><tr><th>Ref</th><th>Outstanding</th><th>Due Date</th><th>Status</th></tr></thead>
+            <tbody id="ov-active-tbody"><tr class="loading-row"><td colspan="4">Select a client</td></tr></tbody></table>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Recent Transactions</span><button class="btn btn-ghost btn-sm" onclick="showTab('history')">Full History</button></div>
+          <div class="tbl-wrap">
+            <table><thead><tr><th>Date</th><th>Type</th><th>Amount</th></tr></thead>
+            <tbody id="ov-txn-tbody"><tr class="loading-row"><td colspan="3">Select a client</td></tr></tbody></table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- INVOICES TAB -->
+    <div id="tab-invoices" class="hidden">
+      <div class="topbar">
+        <h1>My Invoices</h1>
+        <div class="flex-gap">
+          <select id="ci-status-filter" class="form-control" style="width:160px" onchange="loadClientInvoices()">
+            <option value="">All</option>
+            <option value="SUBMITTED">Submitted</option>
+            <option value="APPROVED">Approved</option>
+            <option value="DISBURSED">Disbursed</option>
+            <option value="OVERDUE">Overdue</option>
+            <option value="REPAID">Repaid</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="loadClientInvoices()">↻</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Invoice Ref</th><th>PO Number</th><th>PO Value</th><th>Financed</th><th>Fees</th><th>Outstanding</th><th>Due Date</th><th>Status</th><th></th></tr></thead>
+            <tbody id="ci-tbody"><tr class="loading-row"><td colspan="9">Select a client</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTORY TAB -->
+    <div id="tab-history" class="hidden">
+      <div class="topbar">
+        <h1>Transaction History</h1>
+        <div class="flex-gap">
+          <select id="hist-type-filter" class="form-control" style="width:190px" onchange="loadHistory()">
+            <option value="ALL">All Transactions</option>
+            <option value="DISBURSEMENT">Disbursements</option>
+            <option value="BLOCK1_FEE">Block 1 Fees</option>
+            <option value="BLOCK2_FEE">Block 2 Fees</option>
+            <option value="REPAYMENT">Repayments</option>
+            <option value="RESIDUAL_HELD">Residuals Held</option>
+            <option value="RESIDUAL_DISBURSED">Residuals Disbursed</option>
+          </select>
+          <input type="date" id="hist-from" class="form-control" style="width:140px" onchange="loadHistory()">
+          <input type="date" id="hist-to"   class="form-control" style="width:140px" onchange="loadHistory()">
+          <button class="btn btn-ghost btn-sm" onclick="loadHistory()">↻</button>
+          <button class="btn btn-primary btn-sm" onclick="exportHistory()">⬇ Export CSV</button>
+        </div>
+      </div>
+
+      <!-- Summary KPIs -->
+      <div class="grid-4 mb-16">
+        <div class="kpi"><div class="kpi-label">Total Disbursed</div><div class="kpi-value" id="hist-total-disb">—</div></div>
+        <div class="kpi amber"><div class="kpi-label">Total Fees</div><div class="kpi-value" id="hist-total-fees">—</div></div>
+        <div class="kpi green"><div class="kpi-label">Total Received</div><div class="kpi-value" id="hist-total-repaid">—</div></div>
+        <div class="kpi teal"><div class="kpi-label">Running Balance</div><div class="kpi-value" id="hist-outstanding">—</div></div>
+      </div>
+
+      <div class="card">
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Invoice</th>
+                <th>Type</th>
+                <th>Description</th>
+                <th class="text-right">Fee (MYR)</th>
+                <th class="text-right">Received (MYR)</th>
+                <th class="text-right">Paid Out (MYR)</th>
+                <th class="text-right">Running Balance (MYR)</th>
+              </tr>
+            </thead>
+            <tbody id="hist-tbody">
+              <tr class="loading-row"><td colspan="8">Select a client to view transaction history</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="flex-between mt-12" style="font-size:12px">
+          <span id="hist-pagination" class="text-muted"></span>
+          <div class="flex-gap">
+            <button class="btn btn-ghost btn-sm" id="hist-prev" onclick="histPage--; loadHistory()" disabled>← Prev</button>
+            <button class="btn btn-ghost btn-sm" id="hist-next" onclick="histPage++; loadHistory()" disabled>Next →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESERVE TAB -->
+    <div id="tab-reserve" class="hidden">
+      <div class="topbar"><h1>Reserve Fund Management</h1></div>
+      <div class="grid-3 mb-16">
+        <div class="kpi teal"><div class="kpi-label">Reserve Balance</div><div class="kpi-value" id="rsv-balance">—</div><div class="kpi-sub">available reserve</div></div>
+        <div class="kpi"><div class="kpi-label">Credit Limit</div><div class="kpi-value" id="rsv-limit">—</div></div>
+        <div class="kpi green"><div class="kpi-label">Net Available</div><div class="kpi-value" id="rsv-net">—</div><div class="kpi-sub">limit + reserve</div></div>
+      </div>
+      <div class="grid-2 mb-16">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Reserve Activity</span><button class="btn btn-ghost btn-sm" onclick="loadReserveHistory()">↻</button></div>
+          <div class="alert alert-info mb-16">A reserve fund is cash held by the platform on your behalf. It does not count against your credit limit.</div>
+          <div class="tbl-wrap">
+            <table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Balance</th><th>Notes</th></tr></thead>
+            <tbody id="rsv-history-tbody"><tr class="loading-row"><td colspan="5">Loading…</td></tr></tbody></table>
+          </div>
+        </div>
+        <div>
+          <div class="card mb-16">
+            <div class="card-header"><span class="card-title">📤 Request Fund Release</span></div>
+            <div class="alert alert-warning mb-16">Requesting a fund release returns reserve funds to your bank. Ops approval required.</div>
+            <div class="form-group">
+              <label class="form-label">Amount to Release (<span class="platform-currency">MYR</span>)</label>
+              <input type="number" id="fr-amount" class="form-control" placeholder="0.00" step="0.01">
+              <div class="form-hint" id="fr-max-hint"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Purpose / Reason</label>
+              <textarea id="fr-purpose" class="form-control" rows="2" placeholder="Brief reason…"></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Bank Account Details</label>
+              <textarea id="fr-bank" class="form-control" rows="2" placeholder="Bank, account number, holder…"></textarea>
+            </div>
+            <button class="btn btn-amber" onclick="submitFundRequest()" style="width:100%">Submit Release Request</button>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">My Requests</span><button class="btn btn-ghost btn-sm" onclick="loadMyFundRequests()">↻</button></div>
+            <div class="tbl-wrap">
+              <table><thead><tr><th>Date</th><th>Amount</th><th>Status</th></tr></thead>
+              <tbody id="my-fr-tbody"><tr class="loading-row"><td colspan="3">Loading…</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SUBMIT TAB -->
+    <div id="tab-submit" class="hidden">
+      <div class="topbar"><h1>Submit New Invoice</h1></div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Invoice Details</span></div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">PO Number</label>
+              <input type="text" id="sub-po-no" class="form-control" placeholder="PO-2025-001">
+            </div>
+            <div class="form-group">
+              <label class="form-label">PO Date</label>
+              <input type="date" id="sub-po-date" class="form-control">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">PO Value (<span class="platform-currency">MYR</span>)</label>
+              <input type="number" id="sub-po-val" class="form-control" placeholder="0.00" step="0.01" oninput="updateAdvanceCalc()">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Landed Cost (optional)</label>
+              <input type="number" id="sub-landed" class="form-control" placeholder="0.00" step="0.01" oninput="updateAdvanceCalc()">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Advance Rate: <span id="sub-rate-label">80%</span></label>
+            <input type="range" id="sub-rate" min="50" max="90" value="80" class="form-control" style="padding:4px 0" oninput="document.getElementById('sub-rate-label').textContent=this.value+'%';updateAdvanceCalc()">
+          </div>
+          <div id="sub-calc-preview" style="display:none">
+            <div class="divider"></div>
+            <div class="grid-2">
+              <div><span class="form-label">Financed Amount</span><div class="kpi-value" style="font-size:15px" id="sub-financed">—</div></div>
+              <div><span class="form-label">Gross Margin</span><div class="kpi-value" style="font-size:15px" id="sub-margin">—</div></div>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <button class="btn btn-primary" onclick="submitInvoice()" style="width:100%">Submit Invoice</button>
+        </div>
+        <div>
+          <div class="card mb-16" id="sub-fee-preview" style="display:none">
+            <div class="card-header"><span class="card-title">Fee Estimate</span><span class="text-muted" style="font-size:11px">Based on template</span></div>
+            <div id="sub-fee-detail"></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">Account Status</span></div>
+            <div id="sub-account-status">Select client to view status</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     INVOICE DETAIL MODAL
+     Includes: cost breakdown + residual disbursement + PDF
+════════════════════════════════════════════════════════ -->
+<div id="modal-ci" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-ci')">
+  <div class="modal modal-lg">
+
+    <!-- Print header (hidden on screen, visible in PDF) -->
+    <div class="pdf-print-header" style="padding:16px 20px 0;border-bottom:2px solid #000;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-size:18pt;font-weight:700;color:#000" id="pdf-platform-name">PO Financing Portal v4</div>
+          <div style="font-size:10pt;color:#555;margin-top:2px">Invoice Cost Breakdown Statement</div>
+        </div>
+        <div style="text-align:right;font-size:9pt;color:#555">
+          <div id="pdf-generated-date"></div>
+          <div id="pdf-invoice-ref" style="font-weight:700;font-size:11pt;color:#000;margin-top:4px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-header">
+      <h2 id="modal-ci-title">Invoice Detail</h2>
+      <div class="flex-gap">
+        <button class="btn btn-ghost btn-sm" id="btn-pdf" onclick="printInvoicePDF()" title="Save as PDF">
+          ⬇ Save PDF
+        </button>
+        <button class="close-btn" onclick="closeModal('modal-ci')">✕</button>
+      </div>
+    </div>
+
+    <div class="modal-body" id="modal-ci-body">
+      <div style="text-align:center;padding:30px;color:var(--mgray)">Loading…</div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-ci')">Close</button>
+      <button class="btn btn-primary btn-sm" onclick="printInvoicePDF()">⬇ Save PDF</button>
+    </div>
+  </div>
+</div>
+
+<script>
+<!-- ============================================================
+     client.html
+     Version : 1.2
+     Updated : 2026-04-02
+     Changes :
+       Fix CH1 (BUG) — init(): CLIENT role users do not have GET_ALL_CLIENTS
+         permission. The try/catch was entered for all user types, threw a
+         permission error for CLIENT users, and refreshOverview() was never
+         called. CLIENT users now skip GET_ALL_CLIENTS entirely — CLIENT_ID
+         is taken directly from ctx.clientId and refreshOverview() is called
+         immediately. Ops/Admin users continue to use GET_ALL_CLIENTS as before.
+       Fix CH2 (BUG) — init(): date defaults (hist-from / hist-to) were set
+         before CLIENT_ID was confirmed for CLIENT users. Moved date init to
+         run unconditionally before the branch so both paths benefit.
+     ============================================================ -->
+<script>
+// ── State ───────────────────────────────────────────────────────
+let CLIENT_ID   = null;
+let histPage    = 1;
+let histData    = [];
+let allClients  = [];
+let _currentInvoice = null;  // stored for PDF generation
+
+// ── Init ────────────────────────────────────────────────────────
+async function init() {
+  const ctx = await requireAuth();
+  if (!ctx) return;
+  Session.renderUserBadge('user-badge');
+
+  // Fix CH2: set date filter defaults unconditionally before any branch
+  const today = new Date().toISOString().split('T')[0];
+  const d30   = new Date(Date.now() - 30*86400000).toISOString().split('T')[0];
+  document.getElementById('hist-from').value = d30;
+  document.getElementById('hist-to').value   = today;
+
+  // Fix CH1: CLIENT users cannot call GET_ALL_CLIENTS (permission denied).
+  // CLIENT_ID is available directly from ctx.clientId — use it and load immediately.
+  if (ctx.userType === 'CLIENT' && ctx.clientId) {
+    CLIENT_ID = ctx.clientId;
+    const sel = document.getElementById('client-selector');
+    if (sel) sel.closest('div[style*="padding"]').style.display = 'none';
+    refreshOverview();
+    return;
+  }
+
+  // Ops / Admin users: populate client selector via GET_ALL_CLIENTS
+  try {
+    const cRes = await API.call('GET_ALL_CLIENTS');
+    allClients = cRes.clients || [];
+    const sel  = document.getElementById('client-selector');
+    sel.innerHTML = '<option value="">— Select Client —</option>' +
+      allClients.map(c => `<option value="${c.client_id}">${c.company_name}</option>`).join('');
+    if (allClients.length) {
+      sel.value = allClients[0].client_id;
+      CLIENT_ID = allClients[0].client_id;
+      refreshOverview();
+    }
+  } catch(e) { Toast.error('Init error: ' + e.message); }
+}
+
+async function onClientChange() {
+  CLIENT_ID = document.getElementById('client-selector').value;
+  if (!CLIENT_ID) return;
+  refreshOverview();
+  loadReserveHistory();
+  loadMyFundRequests();
+  updateAccountStatus();
+}
+
+function showTab(tab) {
+  document.querySelectorAll('[id^="tab-"]').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.remove('hidden');
+  document.querySelector(`[onclick="showTab('${tab}')"]`)?.classList.add('active');
+  if (tab === 'overview') refreshOverview();
+  if (tab === 'invoices') loadClientInvoices();
+  if (tab === 'history')  loadHistory();
+  if (tab === 'reserve')  { loadReserveHistory(); loadMyFundRequests(); }
+  if (tab === 'submit')   updateAccountStatus();
+}
+
+// ── Overview ────────────────────────────────────────────────────
+async function refreshOverview() {
+  if (!CLIENT_ID) return;
+  try {
+    const [summary, invRes, histRes] = await Promise.all([
+      API.call('GET_CLIENT_FINANCIAL_SUMMARY', { clientId: CLIENT_ID }),
+      API.call('GET_INVOICES', { clientId: CLIENT_ID }),
+      API.call('GET_TRANSACTION_HISTORY', { clientId: CLIENT_ID, page: 1, pageSize: 5 }),
+    ]);
+    const s = summary;
+    document.getElementById('client-name-h1').textContent = s.company_name || 'Client Overview';
+    document.getElementById('ov-limit').textContent     = fmt(s.credit_limit);
+    document.getElementById('ov-exposure').textContent  = fmt(s.current_exposure);
+    document.getElementById('ov-util').textContent      = `${pct(s.utilisation_pct)} utilised`;
+    document.getElementById('ov-available').textContent = fmt(s.available_limit);
+    document.getElementById('ov-reserve').textContent   = fmt(s.reserve_balance);
+    const utilPct = Math.min(100, s.utilisation_pct || 0);
+    document.getElementById('util-label').textContent   = `${fmt(s.current_exposure)} of ${fmt(s.credit_limit)}`;
+    document.getElementById('util-pct').textContent     = pct(utilPct);
+    const bar = document.getElementById('util-bar');
+    bar.style.width = utilPct + '%';
+    bar.className   = 'prog-fill' + (utilPct > 85 ? ' red' : utilPct > 60 ? ' amber' : ' green');
+    const active = (invRes.invoices||[]).filter(i => ['DISBURSED','OVERDUE','APPROVED'].includes(i.status)).slice(0,5);
+    document.getElementById('ov-active-tbody').innerHTML = active.length ? active.map(i => `
+      <tr>
+        <td class="text-bold">${i.invoice_ref}</td>
+        <td class="amount">${fmt(i.outstanding_balance)}</td>
+        <td>${fmtDate(i.due_date)}</td>
+        <td>${badge(i.status)}</td>
+      </tr>`).join('') : '<tr><td colspan="4" class="text-center text-muted" style="padding:12px">No active invoices</td></tr>';
+    const txns = (histRes.lines || []).slice(0,5);
+    document.getElementById('ov-txn-tbody').innerHTML = txns.length ? txns.map(t => {
+      const isPos = ['DISBURSEMENT','BLOCK1_FEE','BLOCK2_FEE'].includes(t.txn_type);
+      const amt   = t.fee_amount || t.received_amount || t.paid_out_amount || Math.abs(t.amount) || 0;
+      return `<tr>
+        <td>${fmtDate(t.date)}</td>
+        <td><span class="badge ${isPos?'badge-red':'badge-green'}" style="font-size:10px">${(t.txn_type||'').replace(/_/g,' ')}</span></td>
+        <td class="amount ${isPos?'text-red':'text-green'}">${isPos?'↑':'↓'}${fmtN(amt)}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="3" class="text-center text-muted" style="padding:12px">No recent activity</td></tr>';
+  } catch(e) { Toast.error('Overview error: ' + e.message); }
+}
+
+// ── Invoices ────────────────────────────────────────────────────
+async function loadClientInvoices() {
+  if (!CLIENT_ID) return;
+  document.getElementById('ci-tbody').innerHTML = '<tr class="loading-row"><td colspan="9">Loading…</td></tr>';
+  try {
+    const res  = await API.call('GET_INVOICES', { clientId: CLIENT_ID, status: document.getElementById('ci-status-filter').value, pageSize: 50 });
+    const invs = res.invoices || [];
+    document.getElementById('ci-tbody').innerHTML = invs.length ? invs.map(i => `
+      <tr>
+        <td class="text-bold">${i.invoice_ref}</td>
+        <td>${i.po_number}</td>
+        <td class="amount text-right">${fmt(i.po_value)}</td>
+        <td class="amount text-right">${fmt(i.financed_amount)}</td>
+        <td class="amount text-right">${fmt(i.total_fees)}</td>
+        <td class="amount text-right ${Number(i.outstanding_balance)>0?'text-amber':''}">${fmt(i.outstanding_balance)}</td>
+        <td>${fmtDate(i.due_date)}</td>
+        <td>${badge(i.status)}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="openInvDetail('${i.invoice_id}')">Detail</button></td>
+      </tr>`).join('') : '<tr><td colspan="9" class="text-center text-muted" style="padding:20px">No invoices found</td></tr>';
+  } catch(e) { Toast.error(e.message); }
+}
+
+// ── Invoice Detail + Cost Breakdown ─────────────────────────────
+async function openInvDetail(invoiceId) {
+  openModal('modal-ci');
+  document.getElementById('modal-ci-body').innerHTML = '<div style="text-align:center;padding:30px;color:var(--mgray)">Loading…</div>';
+  _currentInvoice = null;
+  try {
+    const res = await API.call('GET_INVOICE_DETAIL', { invoiceId });
+    _currentInvoice = res;
+    renderInvoiceDetail(res);
+  } catch(e) {
+    document.getElementById('modal-ci-body').innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+  }
+}
+
+function renderInvoiceDetail(res) {
+  const i   = res.invoice || {};
+  const fl  = res.feeLines   || [];
+  const rp  = res.repayments || [];
+
+  document.getElementById('modal-ci-title').textContent = 'Invoice ' + i.invoice_ref;
+  document.getElementById('pdf-invoice-ref').textContent = i.invoice_ref || '';
+  document.getElementById('pdf-generated-date').textContent = 'Generated: ' + new Date().toLocaleDateString('en-MY', {day:'2-digit',month:'short',year:'numeric'});
+
+  const cur = (window.POF_CONFIG && window.POF_CONFIG.CURRENCY) || 'MYR';
+
+  // ── Build cost breakdown from fee lines ──────────────────────
+  const breakdownHtml = buildCostBreakdown(i, fl, rp, cur);
+
+  document.getElementById('modal-ci-body').innerHTML = `
+
+    <!-- Invoice header info -->
+    <div class="grid-2 mb-16">
+      <div><span class="form-label">Invoice Reference</span><div class="text-bold" style="font-size:14px">${i.invoice_ref||'—'}</div></div>
+      <div><span class="form-label">Status</span><div style="margin-top:2px">${badge(i.status||'')}</div></div>
+      <div><span class="form-label">PO Number</span><div class="text-bold">${i.po_number||'—'}</div></div>
+      <div><span class="form-label">PO Date</span><div>${fmtDate(i.po_date)}</div></div>
+      <div><span class="form-label">PO Value</span><div class="amount">${fmt(i.po_value)}</div></div>
+      <div><span class="form-label">Advance Rate</span><div>${i.advance_rate_pct||'—'}%</div></div>
+      <div><span class="form-label">Disbursement Date</span><div>${fmtDate(i.disbursement_date)}</div></div>
+      <div><span class="form-label">Due Date</span><div>${fmtDate(i.due_date)}</div></div>
+    </div>
+
+    ${breakdownHtml}
+
+    ${rp.length ? `
+    <div class="breakdown-section">
+      <h3>Repayment History</h3>
+      <table>
+        <thead><tr><th>Date</th><th class="text-right">Amount</th><th>Method</th><th>Reference</th></tr></thead>
+        <tbody>
+          ${rp.map(r => `
+          <tr>
+            <td>${fmtDate(r.payment_date||r.created_at)}</td>
+            <td class="amount text-right text-green">+${fmt(r.gross_amount||r.amount)}</td>
+            <td>${r.payment_method||'—'}</td>
+            <td style="font-size:11px;color:var(--mgray)">${r.reference_no||'—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>` : ''}
+  `;
+}
+
+function buildCostBreakdown(inv, feeLines, repayments, cur) {
+  const financed      = Number(inv.financed_amount) || 0;
+  const totalFees     = Number(inv.total_fees)      || 0;
+  const totalRepayable = Number(inv.total_repayable) || 0;
+  const amountRepaid  = Number(inv.amount_repaid)   || 0;
+  const outstanding   = Number(inv.outstanding_balance) || 0;
+
+  // ── Parse block breakdown from fee line calculation_detail ───
+  let blockRows = '';
+  let derivedFeeTotal = 0;
+
+  if (feeLines.length) {
+    feeLines.forEach(fl => {
+      let detail = {};
+      try { detail = JSON.parse(fl.calculation_detail || '{}'); } catch(e) {}
+
+      if (detail.blocks_applied && detail.blocks_applied.length) {
+        // BLOCK_RATE — render each block segment
+        detail.blocks_applied.forEach(b => {
+          derivedFeeTotal += b.fee || 0;
+          const typeTag = b.type === 'FLAT_BLOCK'      ? `<span class="block-type-tag flat">Flat block</span>`
+                        : b.type === 'FULL_UNITS'       ? `<span class="block-type-tag unit">${b.full_units}× unit</span>`
+                        : b.type === 'MIN_CHARGE_UNIT'  ? `<span class="block-type-tag min">Min charge</span>`
+                        :                                 `<span class="block-type-tag">Prorated</span>`;
+          blockRows += `
+            <div class="block-row">
+              <div>
+                <div class="block-label">${fl.rule_name} — Day ${b.start_day||''}–${b.end_day||''}</div>
+                <div class="block-calc">${b.note||''}</div>
+              </div>
+              ${typeTag}
+              <div class="block-fee">${cur} ${fmtN(b.fee||0)}</div>
+            </div>`;
+        });
+      } else {
+        // Non-block fee (origination, flat, etc.)
+        derivedFeeTotal += Number(fl.fee_amount) || 0;
+        blockRows += `
+          <div class="block-row">
+            <div>
+              <div class="block-label">${fl.rule_name}</div>
+              <div class="block-calc">${fl.calc_method.replace(/_/g,' ')} · base: ${cur} ${fmtN(fl.base_amount||0)}</div>
+            </div>
+            <span class="block-type-tag">Fee</span>
+            <div class="block-fee">${cur} ${fmtN(Number(fl.fee_amount)||0)}</div>
+          </div>`;
+      }
+    });
+  } else if (totalFees > 0) {
+    // No fee lines yet (pre-approval) — show placeholder
+    blockRows = `<div class="block-row"><div class="block-label text-muted">Fee lines not yet calculated — invoice pending approval</div><span></span><span></span></div>`;
+  }
+
+  // ── Repayment schedule ───────────────────────────────────────
+  // Build a running balance to show the cost position at each payment
+  let repayRows = '';
+  if (repayments.length) {
+    let runningPrincipal = financed;
+    let runningFees      = totalFees;
+    let runningTotal     = totalRepayable;
+
+    // Opening row
+    repayRows += `
+      <div class="repay-row" style="font-weight:700;background:#f8fafc;border-radius:6px 6px 0 0">
+        <div class="repay-day">Day 0</div>
+        <div class="repay-note">Disbursement</div>
+        <div class="repay-amt">${cur} ${fmtN(financed)}</div>
+        <div class="repay-bal">${cur} ${fmtN(totalRepayable)}</div>
+      </div>`;
+
+    repayments.forEach((r, idx) => {
+      const pmt     = Number(r.gross_amount || r.amount) || 0;
+      // Fees first, then principal
+      const feesPaid      = Math.min(pmt, runningFees);
+      const principalPaid = Math.min(pmt - feesPaid, runningPrincipal);
+      const residual      = Math.max(0, pmt - feesPaid - principalPaid);
+      runningFees      = Math.max(0, runningFees - feesPaid);
+      runningPrincipal = Math.max(0, runningPrincipal - principalPaid);
+      runningTotal     = runningPrincipal + runningFees;
+
+      const isLast    = idx === repayments.length - 1;
+      const disbNote  = residual > 0 ? ` · residual ${cur} ${fmtN(residual)} disbursed` : '';
+
+      repayRows += `
+        <div class="repay-row">
+          <div class="repay-day">${fmtDate(r.payment_date||r.created_at)}</div>
+          <div class="repay-note">
+            Payment ${idx+1}${disbNote}
+            ${feesPaid > 0 ? `<div style="color:var(--amber);font-size:10px">Fees: ${cur} ${fmtN(feesPaid)}</div>` : ''}
+            ${principalPaid > 0 ? `<div style="color:var(--navy2);font-size:10px">Principal: ${cur} ${fmtN(principalPaid)}</div>` : ''}
+          </div>
+          <div class="repay-amt text-green">+${cur} ${fmtN(pmt)}</div>
+          <div class="repay-bal ${runningTotal > 0 ? 'text-amber' : 'text-green'}">${cur} ${fmtN(Math.max(0, runningTotal))}</div>
+        </div>`;
+
+      // Residual disbursement note: residual paid back to client on final payment day
+      if (residual > 0 && isLast) {
+        repayRows += `
+          <div class="residual-note">
+            ✓ Residual of ${cur} ${fmtN(residual)} disbursed to client on this date — invoice fully settled.
+          </div>`;
+      }
+    });
+
+    // If still outstanding
+    if (outstanding > 0.005) {
+      repayRows += `
+        <div class="repay-row" style="background:#fff8f0;border-radius:0 0 6px 6px">
+          <div class="repay-day" style="color:var(--amber)">Due</div>
+          <div class="repay-note" style="color:var(--amber)">Outstanding balance</div>
+          <div class="repay-amt" style="color:var(--amber)">—</div>
+          <div class="repay-bal" style="color:var(--amber)">${cur} ${fmtN(outstanding)}</div>
+        </div>`;
+    }
+  } else {
+    repayRows = `<div style="padding:12px 0;color:var(--mgray);font-size:12px">No repayments recorded yet.</div>`;
+  }
+
+  // ── Summary totals ───────────────────────────────────────────
+  const fullyRepaid = outstanding < 0.005 && amountRepaid > 0;
+
+  return `
+    <!-- Cost Breakdown -->
+    <div class="breakdown-section">
+      <h3>Cost Breakdown</h3>
+      <div style="margin-bottom:4px">
+        <div class="summary-row">
+          <span>Financed Amount (Advance)</span>
+          <span class="amount">${cur} ${fmtN(financed)}</span>
+        </div>
+        ${blockRows}
+        <div class="summary-row" style="border-top:1px solid var(--border);margin-top:6px;padding-top:8px">
+          <span class="text-bold">Total Finance Fees</span>
+          <span class="amount text-amber">${cur} ${fmtN(totalFees)}</span>
+        </div>
+        <div class="summary-row total">
+          <span>Total Repayable</span>
+          <span class="amount">${cur} ${fmtN(totalRepayable)}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Repayment Schedule -->
+    <div class="breakdown-section">
+      <h3>Repayment Schedule</h3>
+      <div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr;gap:6px;padding:6px 0;font-size:10.5px;font-weight:700;color:var(--mgray);text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid var(--border)">
+        <div>Date</div><div>Details</div><div class="text-right">Payment</div><div class="text-right">Balance</div>
+      </div>
+      ${repayRows}
+    </div>
+
+    <!-- Final status banner -->
+    <div style="margin-top:14px">
+      ${fullyRepaid
+        ? `<div class="alert alert-success">✓ Invoice fully settled — zero balance outstanding.</div>`
+        : outstanding > 0
+          ? `<div class="alert alert-warning">Outstanding balance: <strong>${cur} ${fmtN(outstanding)}</strong></div>`
+          : `<div class="alert alert-info">Invoice in progress — fees will be shown after approval.</div>`
+      }
+    </div>`;
+}
+
+// ── PDF Generation ───────────────────────────────────────────────
+function printInvoicePDF() {
+  if (!_currentInvoice) return Toast.error('No invoice loaded');
+
+  // Set PDF header fields (visible in print mode)
+  const platformName = (window.POF_CONFIG && window.POF_CONFIG.PLATFORM_NAME) || 'PO Financing Portal v4';
+  document.getElementById('pdf-platform-name').textContent = platformName;
+
+  // Brief delay to ensure DOM is ready, then print
+  setTimeout(() => {
+    window.print();
+  }, 100);
+}
+
+// ── Transaction History ──────────────────────────────────────────
+async function loadHistory() {
+  if (!CLIENT_ID) return;
+  const from   = document.getElementById('hist-from').value;
+  const to     = document.getElementById('hist-to').value;
+  const filter = document.getElementById('hist-type-filter').value;
+  document.getElementById('hist-tbody').innerHTML =
+    '<tr class="loading-row"><td colspan="8">Loading…</td></tr>';
+  try {
+    const res  = await API.call('GET_TRANSACTION_HISTORY', {
+      clientId: CLIENT_ID, fromDate: from, toDate: to,
+      typeFilter: filter, page: histPage, pageSize: 25,
+    });
+    histData = res.lines || [];
+
+    // ── KPI summaries from the full line set ─────────────────
+    const allLines = histData;
+    const totalDisb  = allLines.filter(l => l.txn_type === 'DISBURSEMENT')
+                                .reduce((s, l) => s + (l.paid_out_amount || 0), 0);
+    const totalFees  = allLines.filter(l => ['BLOCK1_FEE','BLOCK2_FEE'].includes(l.txn_type))
+                                .reduce((s, l) => s + (l.fee_amount || 0), 0);
+    const totalRecd  = allLines.filter(l => l.txn_type === 'REPAYMENT')
+                                .reduce((s, l) => s + (l.received_amount || 0), 0);
+    const lastBal    = allLines.length ? allLines[0].running_balance : 0;  // newest first
+
+    document.getElementById('hist-total-disb').textContent  = fmt(totalDisb);
+    document.getElementById('hist-total-fees').textContent  = fmt(totalFees);
+    document.getElementById('hist-total-repaid').textContent = fmt(totalRecd);
+    document.getElementById('hist-outstanding').textContent =
+      (lastBal < 0 ? '(' : '') + fmt(Math.abs(lastBal)) + (lastBal < 0 ? ') cr' : '');
+
+    // ── Row colour and icon per txn_type ─────────────────────
+    const TYPE_META = {
+      DISBURSEMENT:       { label: 'Disbursement',       cls: 'badge-blue',   icon: '↑' },
+      BLOCK1_FEE:         { label: 'Block 1 Fee',         cls: 'badge-amber',  icon: 'ƒ' },
+      BLOCK2_FEE:         { label: 'Block 2 Fee',         cls: 'badge-amber',  icon: 'ƒ' },
+      REPAYMENT:          { label: 'Repayment',           cls: 'badge-green',  icon: '↓' },
+      RESIDUAL_HELD:      { label: 'Residual Held',       cls: 'badge-purple', icon: '⏸' },
+      RESIDUAL_DISBURSED: { label: 'Residual Disbursed',  cls: 'badge-teal',   icon: '↓' },
+    };
+
+    document.getElementById('hist-tbody').innerHTML = histData.length
+      ? histData.map(t => {
+          const meta  = TYPE_META[t.txn_type] || { label: t.txn_type, cls: 'badge-gray', icon: '' };
+          const isHeld = t.txn_type === 'RESIDUAL_HELD';
+          const isFee  = t.txn_type === 'BLOCK1_FEE' || t.txn_type === 'BLOCK2_FEE';
+          const isDisb = t.txn_type === 'DISBURSEMENT';
+          const isResD = t.txn_type === 'RESIDUAL_DISBURSED';
+          const isRecd = t.txn_type === 'REPAYMENT';
+          const bal    = t.running_balance;
+          const balCls = bal < -0.005 ? 'text-muted' : bal < 0.005 ? 'text-green' : '';
+          return `<tr style="${isHeld ? 'opacity:0.7;font-style:italic' : ''}">
+            <td style="font-size:12px">${fmtDate(t.date)}</td>
+            <td style="font-size:11px;color:var(--navy2);font-weight:600">${t.invoice_ref || '—'}</td>
+            <td><span class="badge ${meta.cls}" style="font-size:10px">${meta.icon} ${meta.label}</span></td>
+            <td style="font-size:11.5px;color:var(--text);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                title="${t.description || ''}">${t.description || '—'}</td>
+            <td class="text-right amount" style="color:var(--amber)">
+              ${t.fee_amount ? fmtN(t.fee_amount) : '—'}</td>
+            <td class="text-right amount" style="color:var(--green)">
+              ${t.received_amount ? fmtN(t.received_amount) : '—'}</td>
+            <td class="text-right amount" style="color:${isDisb ? 'var(--red)' : isResD ? 'var(--teal)' : 'var(--mgray)'}">
+              ${t.paid_out_amount ? fmtN(t.paid_out_amount) : (isHeld ? '(held)' : '—')}</td>
+            <td class="text-right amount text-bold ${balCls}"
+                style="font-size:13px;border-left:2px solid var(--border)">
+              ${bal < 0 ? '(' + fmtN(Math.abs(bal)) + ')' : fmtN(bal)}</td>
+          </tr>`;
+        }).join('')
+      : '<tr><td colspan="8" class="text-center text-muted" style="padding:24px">No transactions found</td></tr>';
+
+    const pg = res.pagination || {};
+    document.getElementById('hist-pagination').textContent =
+      `Showing ${histData.length} of ${pg.total || histData.length} transactions`;
+    document.getElementById('hist-prev').disabled = histPage <= 1;
+    document.getElementById('hist-next').disabled = histPage >= (pg.pages || 1);
+  } catch(e) { Toast.error(e.message); }
+}
+
+function exportHistory() {
+  if (!histData.length) return Toast.warn('No data to export');
+  const headers = ['Date','Invoice','Type','Description','Fee','Received','Paid Out','Running Balance'];
+  const rows    = histData.map(t => [
+    fmtDate(t.date), t.invoice_ref || '', t.txn_type, t.description || '',
+    t.fee_amount || '', t.received_amount || '', t.paid_out_amount || '', t.running_balance,
+  ]);
+  const csv  = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `statement_${CLIENT_ID}_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+}
+
+// ── Reserve ──────────────────────────────────────────────────────
+async function loadReserveHistory() {
+  if (!CLIENT_ID) return;
+  try {
+    const [rsvRes, sumRes] = await Promise.all([
+      API.call('GET_RESERVE_HISTORY', { clientId: CLIENT_ID }),
+      API.call('GET_CLIENT_FINANCIAL_SUMMARY', { clientId: CLIENT_ID }),
+    ]);
+    const s = sumRes;
+    document.getElementById('rsv-balance').textContent = fmt(s.reserve_balance);
+    document.getElementById('rsv-limit').textContent   = fmt(s.credit_limit);
+    document.getElementById('rsv-net').textContent     = fmt(s.net_available || (s.available_limit + s.reserve_balance));
+    document.getElementById('fr-max-hint').textContent = `Max: ${fmt(s.reserve_balance)}`;
+    const rows = rsvRes.history || [];
+    document.getElementById('rsv-history-tbody').innerHTML = rows.length ? rows.map(r => `
+      <tr>
+        <td>${fmtDate(r.created_at)}</td>
+        <td><span class="badge ${r.txn_type==='DEPOSIT'?'badge-green':'badge-amber'}">${(r.txn_type||'').replace(/_/g,' ')}</span></td>
+        <td class="amount ${r.amount>0?'text-green':'text-amber'}">${r.amount>0?'+'+fmt(r.amount):fmt(r.amount)}</td>
+        <td class="amount text-bold">${fmt(r.running_balance)}</td>
+        <td style="font-size:11px;color:var(--mgray)">${r.notes||'—'}</td>
+      </tr>`).join('') : '<tr><td colspan="5" class="text-center text-muted" style="padding:16px">No reserve activity</td></tr>';
+  } catch(e) {}
+}
+
+async function loadMyFundRequests() {
+  if (!CLIENT_ID) return;
+  try {
+    const res  = await API.call('GET_FUND_REQUESTS', { clientId: CLIENT_ID });
+    const rows = res.requests || [];
+    document.getElementById('my-fr-tbody').innerHTML = rows.length ? rows.map(r => `
+      <tr>
+        <td>${fmtDate(r.submitted_at)}</td>
+        <td class="amount text-bold">${fmt(r.requested_amount)}</td>
+        <td>${badge(r.status)}</td>
+      </tr>`).join('') : '<tr><td colspan="3" class="text-center text-muted" style="padding:12px">No requests</td></tr>';
+  } catch(e) {}
+}
+
+async function submitFundRequest() {
+  if (!CLIENT_ID) return Toast.error('Select a client');
+  const amount  = parseFloat(document.getElementById('fr-amount').value);
+  const purpose = document.getElementById('fr-purpose').value.trim();
+  const bank    = document.getElementById('fr-bank').value.trim();
+  if (!amount || amount <= 0) return Toast.error('Enter a valid amount');
+  if (!purpose) return Toast.error('Purpose is required');
+  try {
+    const res = await API.call('SUBMIT_FUND_REQUEST', { clientId: CLIENT_ID, requestedAmount: amount, purpose, bankDetails: bank });
+    Toast.success(res.status === 'AUTO_APPROVED' ? 'Request auto-approved!' : 'Request submitted. Awaiting ops approval.');
+    document.getElementById('fr-amount').value  = '';
+    document.getElementById('fr-purpose').value = '';
+    document.getElementById('fr-bank').value    = '';
+    loadMyFundRequests();
+    loadReserveHistory();
+  } catch(e) { Toast.error(e.message); }
+}
+
+// ── Submit Invoice ────────────────────────────────────────────────
+function updateAdvanceCalc() {
+  const poVal   = parseFloat(document.getElementById('sub-po-val').value) || 0;
+  const landed  = parseFloat(document.getElementById('sub-landed').value) || 0;
+  const rate    = parseInt(document.getElementById('sub-rate').value) || 80;
+  const financed = poVal * rate / 100;
+  const margin   = poVal > 0 && landed > 0 ? ((poVal - landed) / poVal * 100) : null;
+  if (poVal > 0) {
+    document.getElementById('sub-financed').textContent = fmt(financed);
+    document.getElementById('sub-margin').textContent   = margin !== null ? pct(margin) : '—';
+    document.getElementById('sub-calc-preview').style.display = 'block';
+  }
+}
+
+async function updateAccountStatus() {
+  if (!CLIENT_ID) return;
+  try {
+    const s = await API.call('GET_CLIENT_FINANCIAL_SUMMARY', { clientId: CLIENT_ID });
+    document.getElementById('sub-account-status').innerHTML = `
+      <div class="grid-2">
+        <div><span class="form-label">Credit Limit</span><div class="text-bold">${fmt(s.credit_limit)}</div></div>
+        <div><span class="form-label">Available</span><div class="text-bold text-green">${fmt(s.available_limit)}</div></div>
+        <div><span class="form-label">Utilised</span><div>${pct(s.utilisation_pct)}</div></div>
+        <div><span class="form-label">KYC Status</span><div>${badge('APPROVED')}</div></div>
+      </div>`;
+  } catch(e) {}
+}
+
+async function submitInvoice() {
+  if (!CLIENT_ID) return Toast.error('Select a client');
+  const poNo   = document.getElementById('sub-po-no').value.trim();
+  const poDate = document.getElementById('sub-po-date').value;
+  const poVal  = parseFloat(document.getElementById('sub-po-val').value);
+  const landed = parseFloat(document.getElementById('sub-landed').value) || 0;
+  const rate   = parseInt(document.getElementById('sub-rate').value);
+  if (!poNo || !poDate || !poVal || poVal <= 0) return Toast.error('Fill all required fields');
+  try {
+    const cur = (window.POF_CONFIG && window.POF_CONFIG.CURRENCY) || 'MYR';
+    const res = await API.call('SUBMIT_INVOICE', {
+      clientId: CLIENT_ID, submittedBy: Session.get()?.userId || 'CLIENT',
+      poNumber: poNo, poDate, poValue: poVal, poCurrency: cur,
+      landedCost: landed, advanceRatePct: rate,
+    });
+    Toast.success(`Invoice ${res.invoiceRef} submitted. Financed: ${fmt(res.financedAmount)}`);
+    showTab('invoices');
+  } catch(e) { Toast.error(e.message); }
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

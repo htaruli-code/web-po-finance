@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<!-- ============================================================
+     simulator.html
+     Version : 1.2
+     Updated : 2026-04-02
+     Changes : v1.1 - Added version header; cache-busting ?v=1.3
+               on all shared asset references.
+     ============================================================ -->
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fee Simulator — PO Financing Portal v4</title>
+  <link rel="stylesheet" href="/css/styles.css?v=1.3">
+  <script src="/js/config.js?v=1.3"></script>
+  <script src="/js/navbar.js?v=1.3"></script>
+</head>
+<body>
+<script>
+// Dynamic platform name injection from POF_CONFIG
+document.addEventListener('DOMContentLoaded', function() {
+  const name = window.POF_CONFIG && window.POF_CONFIG.PLATFORM_NAME;
+  if (name) {
+    document.querySelectorAll('.platform-name').forEach(el => el.textContent = name);
+    document.querySelectorAll('.platform-currency').forEach(el => el.textContent = window.POF_CONFIG.CURRENCY || 'MYR');
+    document.querySelectorAll('.platform-timezone').forEach(el => el.textContent = window.POF_CONFIG.TIMEZONE || '');
+    document.title = document.title.replace('PO Financing Portal v4', name);
+  }
+});
+</script>
+  
+  <div class="container">
+    <div class="page-header">
+      <h1>Fee Simulator</h1>
+      <span class="badge badge-info">Stateless — No records created</span>
+    </div>
+
+    <div class="two-col">
+      <!-- Input Panel -->
+      <div class="card">
+        <div class="card-header">Simulation Inputs</div>
+        <div class="form-body">
+          <div class="form-row">
+            <label>Client ID</label>
+            <input id="clientId" type="text" class="input" value="CLT-001" />
+          </div>
+          <div class="form-row">
+            <label>PO Value (MYR)</label>
+            <input id="poValue" type="number" class="input" value="500000" />
+          </div>
+          <div class="form-row">
+            <label>Advance Rate %</label>
+            <input id="advanceRate" type="number" class="input" value="80" min="10" max="90" />
+            <small id="financed-preview" class="hint">Financed: MYR 400,000</small>
+          </div>
+          <div class="form-row">
+            <label>Disbursement Date</label>
+            <input id="disbDate" type="date" class="input" />
+          </div>
+          <div class="form-row">
+            <label>Repayment Date</label>
+            <input id="repayDate" type="date" class="input" />
+            <small id="days-preview" class="hint">Days: 0</small>
+          </div>
+          <button class="btn btn-primary full-width" onclick="runSimulation()">⚡ Simulate</button>
+        </div>
+      </div>
+
+      <!-- Result Panel -->
+      <div id="result-panel">
+        <div class="card placeholder-card">
+          <div class="placeholder-icon">📊</div>
+          <p>Enter inputs and click Simulate</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    
+
+    // Set default dates
+    const today = new Date().toISOString().split('T')[0];
+    const future = new Date(); future.setDate(future.getDate() + 48);
+    document.getElementById('disbDate').value = today;
+    document.getElementById('repayDate').value = future.toISOString().split('T')[0];
+
+    function updatePreviews() {
+      const po = +document.getElementById('poValue').value;
+      const ar = +document.getElementById('advanceRate').value;
+      document.getElementById('financed-preview').textContent =
+        'Financed: MYR ' + (po * ar / 100).toLocaleString('en-MY', {minimumFractionDigits:2});
+      const d1 = new Date(document.getElementById('disbDate').value);
+      const d2 = new Date(document.getElementById('repayDate').value);
+      const days = Math.max(0, Math.round((d2-d1)/86400000));
+      document.getElementById('days-preview').textContent = `Days: ${days}`;
+    }
+    document.querySelectorAll('.input').forEach(el => el.addEventListener('input', updatePreviews));
+    updatePreviews();
+
+    function fmtMoney(n) {
+      return 'MYR ' + Number(n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2});
+    }
+
+    async function runSimulation() {
+      const params = {
+        clientId:       document.getElementById('clientId').value,
+        poValue:        +document.getElementById('poValue').value,
+        advanceRatePct: +document.getElementById('advanceRate').value,
+        disbDate:       document.getElementById('disbDate').value,
+        repayDate:      document.getElementById('repayDate').value,
+      };
+      document.getElementById('result-panel').innerHTML = '<div class="card"><p>Calculating…</p></div>';
+      const res = await fetch(API, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'SIMULATE_FEES', params })
+      }).then(r => r.json());
+
+      if (!res.success) {
+        document.getElementById('result-panel').innerHTML =
+          `<div class="card error-card"><strong>Error:</strong> ${res.error}</div>`;
+        return;
+      }
+
+      document.getElementById('result-panel').innerHTML = `
+        <div class="card">
+          <div class="card-header">
+            ${res.template_name} <span class="badge badge-info">v${res.template_version}</span>
+          </div>
+          <div class="kpi-grid">
+            <div class="kpi-mini blue"><div class="kpi-label">Financed</div><div class="kpi-val">${fmtMoney(res.financed_amount)}</div></div>
+            <div class="kpi-mini purple"><div class="kpi-label">Days</div><div class="kpi-val">${res.days}</div></div>
+            <div class="kpi-mini orange"><div class="kpi-label">Total Fees</div><div class="kpi-val">${fmtMoney(res.total_fees)}</div></div>
+            <div class="kpi-mini green"><div class="kpi-label">Total Repayable</div><div class="kpi-val">${fmtMoney(res.total_repayable)}</div></div>
+          </div>
+          <div class="kpi-ear">Effective Annual Rate: <strong>${res.effective_annual_rate}%</strong></div>
+
+          <table class="table mt">
+            <thead><tr><th>Fee</th><th>Type</th><th>Method</th><th>Amount</th></tr></thead>
+            <tbody>
+              ${(res.fee_lines||[]).map(fl => {
+                const detail = JSON.parse(fl.calculation_detail || '{}');
+                const subRows = (detail.blocks_applied || []).map(b =>
+                  `<tr class="sub-row"><td colspan="3" style="padding-left:24px">↳ ${b.note} (${b.days_consumed}d @ ${b.rate_pct}%)</td><td class="mono">MYR ${b.fee.toLocaleString('en-MY',{minimumFractionDigits:2})}</td></tr>`
+                ).join('');
+                return `<tr>
+                  <td>${fl.rule_name}</td>
+                  <td><span class="badge badge-type">${fl.fee_type}</span></td>
+                  <td><span class="badge badge-method">${fl.calc_method}</span></td>
+                  <td class="mono"><strong>${fmtMoney(fl.fee_amount)}</strong></td>
+                </tr>${subRows}`;
+              }).join('')}
+              <tr class="total-row">
+                <td colspan="3"><strong>TOTAL FEES</strong></td>
+                <td class="mono"><strong>${fmtMoney(res.total_fees)}</strong></td>
+              </tr>
+              <tr class="repayable-row">
+                <td colspan="3"><strong>TOTAL REPAYABLE</strong></td>
+                <td class="mono"><strong>${fmtMoney(res.total_repayable)}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+          <button class="btn btn-success mt" onclick="alert('Navigate to Client Portal to create invoice.')">
+            ✓ Proceed — Create Invoice
+          </button>
+        </div>`;
+    }
+  </script>
+</body>
+</html>
