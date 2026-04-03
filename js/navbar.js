@@ -1,23 +1,12 @@
 // ============================================================
 // navbar.js
-// Version : 1.3
+// Version : 1.4
 // Updated : 2026-04-02
 // Changes :
-//   v1.0 — Initial extraction from NavBar.html for static hosting.
-//   v1.1 — API.call() switched to GET + URLSearchParams to survive
-//           GAS 302 redirect (POST body is lost on redirect).
-//   v1.2 — _GAS_FALLBACK_URL hardcoded as safety net; Session.load()
-//           reads token from URL hash as fallback; catch block only
-//           logs out on SESSION_EXPIRED, not on every error.
-//   v1.3 — CORS FIX: fetch() was still using POST with Content-Type
-//           header which triggers a CORS preflight. GAS 302-redirects
-//           the preflight and the redirect target has no
-//           Access-Control-Allow-Origin header -> blocked.
-//           Fixed: GET + URLSearchParams, no custom headers, no body.
-//           redirect:'follow' ensures fetch follows the GAS 302 to
-//           the final JSON response without a preflight round-trip.
-//           This is the only fetch mode that works reliably with GAS
-//           cross-origin from a static host.
+//   v1.3 — CORS FIX: switched fetch from POST to GET + URLSearchParams.
+//   v1.4 — Debug: if r.json() throws (GAS returned HTML error page
+//           instead of JSON), catch the raw text and throw it as the
+//           error message so it appears on screen via index.html catch.
 // ============================================================
 //
 // navbar.js — PO Financing Portal v4
@@ -59,7 +48,17 @@ const API = {
       method:   'GET',
       redirect: 'follow',
     });
-    const d = await r.json();
+    // v1.4: if GAS returned an HTML error page instead of JSON,
+    // r.json() throws SyntaxError — read raw text first so we can
+    // show the actual GAS error message on screen.
+    const text = await r.text();
+    let d;
+    try {
+      d = JSON.parse(text);
+    } catch(_) {
+      // GAS returned non-JSON (HTML error page or empty response)
+      throw new Error('GAS returned non-JSON: ' + text.slice(0, 300));
+    }
 
     // Session expired — redirect to login
     if (d.error === 'SESSION_EXPIRED' || d.redirectTo === '/index.html') {
