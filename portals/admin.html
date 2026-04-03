@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<!-- ============================================================
+     admin.html
+     Version : 1.2
+     Updated : 2026-04-02
+     Changes : v1.1 - Added version header; cache-busting ?v=1.3
+               on all shared asset references.
+     ============================================================ -->
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Portal — PO Financing Portal v4</title>
+  <link rel="stylesheet" href="/css/styles.css?v=1.3">
+  <script src="/js/config.js?v=1.3"></script>
+  <script src="/js/navbar.js?v=1.3"></script>
+</head>
+<body>
+<script>
+// Dynamic platform name injection from POF_CONFIG
+document.addEventListener('DOMContentLoaded', function() {
+  const name = window.POF_CONFIG && window.POF_CONFIG.PLATFORM_NAME;
+  if (name) {
+    document.querySelectorAll('.platform-name').forEach(el => el.textContent = name);
+    document.querySelectorAll('.platform-currency').forEach(el => el.textContent = window.POF_CONFIG.CURRENCY || 'MYR');
+    document.querySelectorAll('.platform-timezone').forEach(el => el.textContent = window.POF_CONFIG.TIMEZONE || '');
+    document.title = document.title.replace('PO Financing Portal v4', name);
+  }
+});
+</script>
+
+
+
+<div class="app-layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <h1><span class="platform-name">PO Financing Portal v4</span></h1>
+      <small>Admin Portal</small>
+    </div>
+    <div style="padding:12px 16px;border-top:1px solid rgba(255,255,255,0.12)">
+      <div id="user-badge"></div>
+    </div>
+    <div class="sidebar-section">
+      <button class="nav-link active" onclick="showTab('settings')">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke-width="2"/><circle cx="12" cy="12" r="3" stroke-width="2"/></svg>
+        <span class="nav-label">Platform Settings</span>
+      </button>
+      <button class="nav-link" onclick="showTab('users')">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M9 7a4 4 0 100 8 4 4 0 000-8z" stroke-width="2"/></svg>
+        <span class="nav-label">User Management</span>
+      </button>
+      <button class="nav-link" onclick="showTab('permissions')">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" stroke-width="2"/></svg>
+        <span class="nav-label">Roles & Permissions</span>
+      </button>
+      <button class="nav-link" onclick="showTab('notifications')">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" stroke-width="2"/></svg>
+        <span class="nav-label">Notifications</span>
+      </button>
+      <button class="nav-link" onclick="showTab('activity')">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" stroke-width="2"/></svg>
+        <span class="nav-label">Activity Log</span>
+      </button>
+    </div>
+    <div class="sidebar-section">
+      <a class="nav-link" href="?page=ops"><svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M7 16l-4-4m0 0l4-4m-4 4h18" stroke-width="2"/></svg><span class="nav-label">Back to Ops</span></a>
+    </div>
+  </aside>
+
+  <main class="main-content">
+    <div id="toast"></div>
+
+    <!-- ═══════════════════════════════════
+         PLATFORM SETTINGS
+    ═══════════════════════════════════ -->
+    <div id="tab-settings">
+      <div class="topbar">
+        <div><h1>Platform Settings</h1><p class="text-muted mt-8" style="font-size:12px">Changes apply immediately — no redeployment required</p></div>
+        <button class="btn btn-success" onclick="saveAllSettings()">Save Changes</button>
+      </div>
+
+      <div class="grid-2">
+        <!-- Locale & Branding -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">🌍 Locale & Branding</span></div>
+          <div class="form-group">
+            <label class="form-label">Platform Name</label>
+            <input type="text" id="s-platform-name" class="form-control" placeholder="PO Financing Portal v4">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Base Currency</label>
+              <input type="text" id="s-base-currency" class="form-control" placeholder="MYR" style="text-transform:uppercase">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Date Format</label>
+              <input type="text" id="s-date-format" class="form-control" placeholder="dd MMM yyyy">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Timezone</label>
+            <input type="text" id="s-platform-timezone" class="form-control" placeholder="Asia/Kuala_Lumpur">
+          </div>
+        </div>
+
+        <!-- Limits & Thresholds -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">⚖️ Limits & Thresholds</span></div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Max Advance Rate (%)</label>
+              <input type="number" id="s-max-advance-rate" class="form-control" placeholder="90">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Grace Period (days)</label>
+              <input type="number" id="s-grace-period-days" class="form-control" placeholder="3">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Overdue Penalty (%/day)</label>
+              <input type="number" id="s-overdue-penalty-pct" class="form-control" step="0.01" placeholder="0.1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Session Timeout (hrs)</label>
+              <input type="number" id="s-session-timeout-hours" class="form-control" placeholder="8">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Four-Eyes Threshold</label>
+              <input type="number" id="s-four-eyes-threshold" class="form-control" placeholder="1000000">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Min Company Reserve</label>
+              <input type="number" id="s-min-company-reserve" class="form-control" placeholder="200000">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Fund Request Auto-Approve (0 = never)</label>
+            <input type="number" id="s-fund-request-auto-approve" class="form-control" placeholder="0">
+          </div>
+        </div>
+
+        <!-- Notifications -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">📧 Notification Settings</span></div>
+          <div class="form-group">
+            <label class="form-label">Ops Email</label>
+            <input type="email" id="s-ops-email" class="form-control" placeholder="ops@yourcompany.com">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Admin Email</label>
+            <input type="email" id="s-admin-email" class="form-control" placeholder="admin@yourcompany.com">
+          </div>
+          <div class="form-group">
+            <label class="form-label">From Email Name</label>
+            <input type="text" id="s-from-email-name" class="form-control" placeholder="PO Financing Portal v4">
+          </div>
+        </div>
+
+        <!-- All settings table -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">📋 All Settings</span></div>
+          <div id="settings-table-wrap" style="overflow-x:auto;font-size:12px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════
+         USER MANAGEMENT
+    ═══════════════════════════════════ -->
+    <div id="tab-users" class="hidden">
+      <div class="topbar">
+        <h1>User Management</h1>
+        <button class="btn btn-primary" onclick="openModal('modal-new-user')">+ Create User</button>
+      </div>
+
+      <div class="tab-bar" style="margin-bottom:16px">
+        <button class="tab active" onclick="switchUserTab('platform', this)">Platform Users</button>
+        <button class="tab" onclick="switchUserTab('client', this)">Client Users</button>
+        <button class="tab" onclick="switchUserTab('investor', this)">Investor Users</button>
+      </div>
+
+      <div id="user-tab-platform">
+        <div class="card">
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Last Login</th></tr></thead>
+            <tbody id="users-platform-tbody"><tr class="loading-row"><td colspan="5">Loading…</td></tr></tbody>
+          </table></div>
+        </div>
+      </div>
+      <div id="user-tab-client" class="hidden">
+        <div class="card">
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Name</th><th>Email</th><th>Client</th><th>Role</th><th>Active</th></tr></thead>
+            <tbody id="users-client-tbody"><tr class="loading-row"><td colspan="5">Loading…</td></tr></tbody>
+          </table></div>
+        </div>
+      </div>
+      <div id="user-tab-investor" class="hidden">
+        <div class="card">
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Name</th><th>Email</th><th>Investor</th><th>Role</th><th>Active</th></tr></thead>
+            <tbody id="users-investor-tbody"><tr class="loading-row"><td colspan="5">Loading…</td></tr></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════
+         ROLES & PERMISSIONS
+    ═══════════════════════════════════ -->
+    <div id="tab-permissions" class="hidden">
+      <div class="topbar"><h1>Roles & Permissions</h1></div>
+      <div class="card">
+        <div class="tbl-wrap" style="overflow-x:auto">
+          <table id="perm-table">
+            <thead><tr>
+              <th>Permission</th>
+              <th title="SUPER_ADMIN">SA</th><th title="OPS_MANAGER">OM</th><th title="OPS_ANALYST">OA</th><th title="AUDITOR">AU</th>
+              <th title="CLIENT_ADMIN">CA</th><th title="CLIENT_OPERATOR">CO</th><th title="CLIENT_VIEWER">CV</th>
+              <th title="INVESTOR_ADMIN">IA</th><th title="INVESTOR_VIEWER">IV</th>
+            </tr></thead>
+            <tbody id="perm-tbody"></tbody>
+          </table>
+        </div>
+        <p style="font-size:11px;color:var(--mgray);margin-top:12px">SA=SUPER_ADMIN  OM=OPS_MANAGER  OA=OPS_ANALYST  AU=AUDITOR  CA=CLIENT_ADMIN  CO=CLIENT_OPERATOR  CV=CLIENT_VIEWER  IA=INVESTOR_ADMIN  IV=INVESTOR_VIEWER</p>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════
+         NOTIFICATIONS
+    ═══════════════════════════════════ -->
+    <div id="tab-notifications" class="hidden">
+      <div class="topbar">
+        <h1>Notifications</h1>
+        <div class="flex-gap">
+          <button class="btn btn-ghost btn-sm" onclick="processQueue()">▶ Process Queue Now</button>
+        </div>
+      </div>
+      <div class="kpi-row" id="notif-kpis"></div>
+      <div class="card mt-16">
+        <div class="flex-gap mb-12">
+          <select id="notif-status-filter" class="form-control" style="width:160px" onchange="loadNotifications()">
+            <option value="">All Status</option>
+            <option value="QUEUED">Queued</option>
+            <option value="SENT">Sent</option>
+            <option value="FAILED">Failed</option>
+          </select>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Created</th><th>Recipient</th><th>Type</th><th>Subject</th><th>Status</th><th>Sent At</th></tr></thead>
+            <tbody id="notif-tbody"><tr class="loading-row"><td colspan="6">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════
+         ACTIVITY LOG
+    ═══════════════════════════════════ -->
+    <div id="tab-activity" class="hidden">
+      <div class="topbar">
+        <h1>Activity Log</h1>
+        <div class="flex-gap">
+          <label style="font-size:12px;color:var(--mgray)">Show</label>
+          <select class="page-size-select" id="act-page-size" onchange="actState.pageSize=+this.value;actState.page=1;loadActivity()">
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+          <label style="font-size:12px;color:var(--mgray)">per page</label>
+          <button class="btn btn-ghost btn-sm" onclick="loadActivity()">↻ Refresh</button>
+        </div>
+      </div>
+
+      <!-- Realm sub-page tabs -->
+      <div class="activity-realm-tabs">
+        <button class="realm-tab active" onclick="switchRealm('OPS',this)">🏢 Ops Activity</button>
+        <button class="realm-tab" onclick="switchRealm('CLIENT',this)">🏬 Client Activity</button>
+        <button class="realm-tab" onclick="switchRealm('LENDER',this)">🏦 Lender Activity</button>
+      </div>
+
+      <!-- Filters row -->
+      <div class="act-filters">
+        <!-- Entity filter — changes label based on realm -->
+        <div id="act-entity-wrap">
+          <select id="act-entity-id" class="form-control" style="width:200px" onchange="actState.page=1;loadActivity()">
+            <option value="">All <span id="act-entity-label">Entities</span></option>
+          </select>
+        </div>
+        <select id="act-category" class="form-control" style="width:160px" onchange="actState.page=1;loadActivity()">
+          <option value="">All Categories</option>
+          <option value="INVOICE">Invoice</option>
+          <option value="PAYMENT">Payment</option>
+          <option value="RESERVE">Reserve</option>
+          <option value="CAPITAL">Capital</option>
+          <option value="USER">User</option>
+          <option value="SETTING">Setting</option>
+          <option value="EMAIL">Email</option>
+          <option value="AUTH">Auth</option>
+        </select>
+        <input type="date" id="act-from" class="form-control" style="width:140px" onchange="actState.page=1;loadActivity()">
+        <input type="date" id="act-to"   class="form-control" style="width:140px" onchange="actState.page=1;loadActivity()">
+        <button class="btn btn-ghost btn-sm" onclick="clearActFilters()">Clear</button>
+      </div>
+
+      <div class="card">
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:140px">Timestamp</th>
+                <th style="width:80px">Realm</th>
+                <th>Actor</th>
+                <th>Category</th>
+                <th>Action</th>
+                <th>Entity</th>
+                <th>Changes / Details</th>
+              </tr>
+            </thead>
+            <tbody id="act-tbody">
+              <tr class="loading-row"><td colspan="7">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination bar -->
+        <div class="pagination-bar" id="act-pagination">
+          <button id="act-prev" onclick="actGo(-1)" disabled>← Prev</button>
+          <span class="page-info" id="act-page-info">—</span>
+          <button id="act-next" onclick="actGo(1)" disabled>Next →</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Create User Modal -->
+<div id="modal-new-user" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-new-user')">
+  <div class="modal">
+    <div class="modal-header"><h2>Create User</h2><button class="close-btn" onclick="closeModal('modal-new-user')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Realm</label>
+        <select id="nu-realm" class="form-control" onchange="updateUserForm()">
+          <option value="PLATFORM">Platform (Ops)</option>
+          <option value="CLIENT">Client</option>
+          <option value="INVESTOR">Investor</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Full Name</label>
+        <input type="text" id="nu-name" class="form-control" placeholder="Full name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" id="nu-email" class="form-control" placeholder="user@example.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Role</label>
+        <select id="nu-role" class="form-control"></select>
+      </div>
+      <div class="form-group" id="nu-scope-group" style="display:none">
+        <label class="form-label" id="nu-scope-label">Client</label>
+        <select id="nu-scope" class="form-control"></select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-new-user')">Cancel</button>
+      <button class="btn btn-primary" onclick="createUser()">Create User</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let ADMIN_USER = null;
+let allSettings  = [];
+let allClients   = [];
+
+// ── Activity Log state ─────────────────────────────────────────
+const actState = {
+  realm:    'OPS',
+  page:     1,
+  pageSize: 20,
+  total:    0,
+  pages:    0,
+};
+
+// Entity lists by realm for the entity filter dropdown
+const actEntities = {
+  OPS:    [],   // loaded from allClients
+  CLIENT: [],
+  LENDER: [],
+};
+
+const ROLE_OPTIONS = {
+  PLATFORM: ['SUPER_ADMIN','OPS_MANAGER','OPS_ANALYST','AUDITOR'],
+  CLIENT:   ['CLIENT_ADMIN','CLIENT_OPERATOR','CLIENT_VIEWER'],
+  INVESTOR: ['INVESTOR_ADMIN','INVESTOR_VIEWER'],
+};
+
+const PERM_MATRIX = [
+  ['invoice:submit',   ['CLIENT_OPERATOR','CLIENT_ADMIN']],
+  ['invoice:view',     ['SUPER_ADMIN','OPS_MANAGER','OPS_ANALYST','AUDITOR','CLIENT_ADMIN','CLIENT_OPERATOR','CLIENT_VIEWER']],
+  ['invoice:approve',  ['SUPER_ADMIN','OPS_MANAGER','OPS_ANALYST']],
+  ['invoice:disburse', ['SUPER_ADMIN','OPS_MANAGER','OPS_ANALYST']],
+  ['invoice:reject',   ['SUPER_ADMIN','OPS_MANAGER']],
+  ['repayment:record', ['SUPER_ADMIN','OPS_MANAGER','OPS_ANALYST']],
+  ['capital:view',     ['SUPER_ADMIN','OPS_MANAGER','OPS_ANALYST','AUDITOR','INVESTOR_ADMIN']],
+  ['capital:manage',   ['SUPER_ADMIN','OPS_MANAGER']],
+  ['funder:drawdown',  ['SUPER_ADMIN','OPS_MANAGER']],
+  ['client:manage',    ['SUPER_ADMIN','OPS_MANAGER']],
+  ['template:manage',  ['SUPER_ADMIN','OPS_MANAGER']],
+  ['report:full',      ['SUPER_ADMIN','OPS_MANAGER','AUDITOR']],
+  ['report:ops',       ['SUPER_ADMIN','OPS_MANAGER','OPS_ANALYST']],
+  ['report:investor',  ['INVESTOR_ADMIN','INVESTOR_VIEWER']],
+  ['user:manage',      ['SUPER_ADMIN','CLIENT_ADMIN']],
+  ['audit:view',       ['SUPER_ADMIN','OPS_MANAGER','AUDITOR']],
+  ['system:config',    ['SUPER_ADMIN']],
+];
+const ROLES_SHORT  = ['SUPER_ADMIN','OPS_MANAGER','OPS_ANALYST','AUDITOR','CLIENT_ADMIN','CLIENT_OPERATOR','CLIENT_VIEWER','INVESTOR_ADMIN','INVESTOR_VIEWER'];
+const SHORT_LABELS = ['SA','OM','OA','AU','CA','CO','CV','IA','IV'];
+
+async function init() {
+  const ctx = await requireAuth();
+  if (!ctx) return;
+  ADMIN_USER = ctx.userId;
+  Session.renderUserBadge('user-badge');
+  if (!Session.can('system:config')) {
+    document.body.innerHTML = '<div style="padding:40px;text-align:center;font-family:sans-serif"><h2>Access Denied</h2><p>This portal requires SUPER_ADMIN role.</p><a href="?page=ops">Go to Ops Dashboard</a></div>';
+    return;
+  }
+  await loadSettings();
+  await loadClients();
+  renderPermMatrix();
+  loadNotifications();
+}
+
+function showTab(tab) {
+  document.querySelectorAll('[id^="tab-"]').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.remove('hidden');
+  document.querySelector(`[onclick="showTab('${tab}')"]`)?.classList.add('active');
+  if (tab === 'users')    loadAllUsers();
+  if (tab === 'notifications') loadNotifications();
+  if (tab === 'activity') loadActivity();
+}
+
+// ── Settings ───────────────────────────────────────────────────
+async function loadSettings() {
+  try {
+    const res = await API.call('GET_ALL_SETTINGS');
+    allSettings = res.settings || [];
+    allSettings.forEach(s => {
+      const el = document.getElementById('s-' + s.key.replace(/_/g,'-'));
+      if (el) el.value = s.value;
+    });
+    renderSettingsTable();
+  } catch(e) { Toast.error('Failed to load settings: ' + e.message); }
+}
+
+function renderSettingsTable() {
+  const byCategory = {};
+  allSettings.forEach(s => {
+    if (!byCategory[s.category]) byCategory[s.category] = [];
+    byCategory[s.category].push(s);
+  });
+  document.getElementById('settings-table-wrap').innerHTML = Object.entries(byCategory).map(([cat, rows]) => `
+    <div class="mb-16">
+      <h3 style="margin-bottom:8px;color:var(--mgray);text-transform:uppercase;font-size:10px;letter-spacing:0.08em">${cat}</h3>
+      <table><thead><tr><th>Key</th><th>Value</th><th>Description</th><th>Updated By</th><th>Updated</th></tr></thead>
+      <tbody>${rows.map(s=>`<tr>
+        <td><code style="font-size:11px;background:var(--lgray);padding:2px 6px;border-radius:4px">${s.key}</code></td>
+        <td class="text-bold">${s.value}</td>
+        <td style="font-size:11.5px;color:var(--mgray)">${s.description||'—'}</td>
+        <td style="font-size:11px;color:var(--mgray)">${s.updated_by||'—'}</td>
+        <td style="font-size:11px;color:var(--mgray)">${fmtDate(s.updated_at)}</td>
+      </tr>`).join('')}</tbody></table>
+    </div>`).join('');
+}
+
+async function saveAllSettings() {
+  const fieldMap = [
+    'platform_name','base_currency','platform_timezone','date_format',
+    'max_advance_rate','grace_period_days','overdue_penalty_pct','session_timeout_hours',
+    'four_eyes_threshold','min_company_reserve','fund_request_auto_approve',
+    'ops_email','admin_email','from_email_name',
+  ];
+  const settings = fieldMap.map(key => {
+    const el = document.getElementById('s-' + key.replace(/_/g,'-'));
+    return el ? { key, value: el.value } : null;
+  }).filter(Boolean);
+  try {
+    await API.call('BULK_UPDATE_SETTINGS', { settings });
+    Toast.success('Settings saved successfully');
+    loadSettings();
+  } catch(e) { Toast.error('Save failed: ' + e.message); }
+}
+
+async function loadClients() {
+  try {
+    const res = await API.call('GET_ALL_CLIENTS');
+    allClients = res.clients || [];
+    // Populate entity filter for OPS realm
+    actEntities.OPS = allClients.map(c => ({ id: c.client_id, label: c.company_name }));
+  } catch(e) {}
+}
+
+// ── Users ──────────────────────────────────────────────────────
+async function loadAllUsers() {
+  document.getElementById('users-platform-tbody').innerHTML =
+    '<tr><td colspan="5" class="text-center text-muted" style="padding:16px">User listing — check PlatformUsers sheet directly or add GET_ALL_USERS endpoint</td></tr>';
+  document.getElementById('users-client-tbody').innerHTML =
+    '<tr><td colspan="5" class="text-center text-muted" style="padding:16px">Client users — check ClientUsers sheet</td></tr>';
+  document.getElementById('users-investor-tbody').innerHTML =
+    '<tr><td colspan="5" class="text-center text-muted" style="padding:16px">Investor users — check InvestorUsers sheet</td></tr>';
+}
+
+function switchUserTab(tab, el) {
+  ['platform','client','investor'].forEach(t => {
+    document.getElementById(`user-tab-${t}`).classList.toggle('hidden', t !== tab);
+  });
+  document.querySelectorAll('#tab-users .tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function updateUserForm() {
+  const realm = document.getElementById('nu-realm').value;
+  const roles = ROLE_OPTIONS[realm] || [];
+  document.getElementById('nu-role').innerHTML = roles.map(r => `<option value="${r}">${r}</option>`).join('');
+  const showScope = realm !== 'PLATFORM';
+  document.getElementById('nu-scope-group').style.display = showScope ? 'block' : 'none';
+  if (realm === 'CLIENT') {
+    document.getElementById('nu-scope-label').textContent = 'Client';
+    document.getElementById('nu-scope').innerHTML = allClients.map(c=>`<option value="${c.client_id}">${c.company_name}</option>`).join('');
+  } else if (realm === 'INVESTOR') {
+    document.getElementById('nu-scope-label').textContent = 'Investor';
+    document.getElementById('nu-scope').innerHTML = '<option value="INV-001">Bumiputra Capital Partners</option><option value="INV-002">Nexus Growth Fund</option><option value="INV-003">Coastal Ventures</option>';
+  }
+}
+
+async function createUser() {
+  const realm = document.getElementById('nu-realm').value;
+  const name  = document.getElementById('nu-name').value.trim();
+  const email = document.getElementById('nu-email').value.trim();
+  const role  = document.getElementById('nu-role').value;
+  const scope = document.getElementById('nu-scope').value;
+  if (!name || !email || !role) return Toast.error('Name, email and role required');
+  try {
+    if (realm === 'PLATFORM') {
+      await API.call('CREATE_PLATFORM_USER', { email, fullName: name, roleName: role });
+    } else if (realm === 'CLIENT') {
+      await API.call('CREATE_CLIENT_USER', { clientId: scope, email, fullName: name, roleName: role });
+    } else {
+      await API.call('CREATE_INVESTOR_USER', { investorId: scope, email, fullName: name, roleName: role });
+    }
+    closeModal('modal-new-user');
+    Toast.success(`User ${name} created successfully`);
+    document.getElementById('nu-name').value = '';
+    document.getElementById('nu-email').value = '';
+  } catch(e) { Toast.error(e.message); }
+}
+
+// ── Permissions Matrix ─────────────────────────────────────────
+function renderPermMatrix() {
+  document.getElementById('perm-tbody').innerHTML = PERM_MATRIX.map(([perm, holders]) => `
+    <tr>
+      <td><code style="font-size:11px;background:var(--lgray);padding:2px 6px;border-radius:4px">${perm}</code></td>
+      ${ROLES_SHORT.map(r => `<td class="text-center">${holders.includes(r)?'<span style="color:var(--green);font-size:14px">✓</span>':'<span style="color:var(--border)">—</span>'}</td>`).join('')}
+    </tr>`).join('');
+}
+
+// ── Notifications ──────────────────────────────────────────────
+async function loadNotifications() {
+  try {
+    document.getElementById('notif-kpis').innerHTML = `
+      <div class="kpi"><div class="kpi-label">Total Queued</div><div class="kpi-value">—</div></div>
+      <div class="kpi green"><div class="kpi-label">Sent</div><div class="kpi-value">—</div></div>
+      <div class="kpi red"><div class="kpi-label">Failed</div><div class="kpi-value">—</div></div>
+      <div class="kpi amber"><div class="kpi-label">Pending</div><div class="kpi-value">—</div></div>`;
+    document.getElementById('notif-tbody').innerHTML = '<tr><td colspan="6" class="text-center text-muted" style="padding:20px">Notification data in Notifications sheet. Use Process Queue to flush pending emails.</td></tr>';
+  } catch(e) {}
+}
+
+async function processQueue() {
+  try {
+    const res = await API.call('PROCESS_QUEUE');
+    Toast.success(`Queue processed: ${res.sent||0} sent, ${res.failed||0} failed`);
+  } catch(e) { Toast.error(e.message); }
+}
+
+// ── Activity Log ───────────────────────────────────────────────
+
+function switchRealm(realm, el) {
+  actState.realm = realm;
+  actState.page  = 1;
+  document.querySelectorAll('.realm-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  updateEntityFilter(realm);
+  loadActivity();
+}
+
+function updateEntityFilter(realm) {
+  const sel = document.getElementById('act-entity-id');
+  const labelMap = { OPS: 'Client', CLIENT: 'Client', LENDER: 'Investor' };
+  const entities  = actEntities[realm] || [];
+  sel.innerHTML = `<option value="">All ${labelMap[realm] || 'Entities'}</option>`
+    + entities.map(e => `<option value="${e.id}">${e.label}</option>`).join('');
+}
+
+function clearActFilters() {
+  document.getElementById('act-entity-id').value = '';
+  document.getElementById('act-category').value  = '';
+  document.getElementById('act-from').value = '';
+  document.getElementById('act-to').value   = '';
+  actState.page = 1;
+  loadActivity();
+}
+
+function actGo(dir) {
+  actState.page = Math.max(1, Math.min(actState.pages, actState.page + dir));
+  loadActivity();
+}
+
+async function loadActivity() {
+  const tbody = document.getElementById('act-tbody');
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="7">Loading…</td></tr>';
+
+  const params = {
+    realm:          actState.realm,
+    pageSize:       actState.pageSize,
+    page:           actState.page,
+    entityId:       document.getElementById('act-entity-id').value  || '',
+    actionCategory: document.getElementById('act-category').value   || '',
+    fromDate:       document.getElementById('act-from').value       || '',
+    toDate:         document.getElementById('act-to').value         || '',
+  };
+
+  try {
+    const res = await API.call('GET_ACTIVITY_LOG', params);
+    const entries = res.entries || [];
+    actState.total = res.total || 0;
+    actState.pages = res.pages || 1;
+
+    if (!entries.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted" style="padding:24px">No activity log entries found for the selected filters.</td></tr>';
+    } else {
+      tbody.innerHTML = entries.map(e => renderActivityRow(e)).join('');
+    }
+
+    // Pagination
+    const info = document.getElementById('act-page-info');
+    const start = Math.min((actState.page - 1) * actState.pageSize + 1, actState.total);
+    const end   = Math.min(actState.page * actState.pageSize, actState.total);
+    info.textContent = actState.total
+      ? `Showing ${start}–${end} of ${actState.total} entries`
+      : 'No entries';
+    document.getElementById('act-prev').disabled = actState.page <= 1;
+    document.getElementById('act-next').disabled = actState.page >= actState.pages;
+
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted" style="padding:24px">Error loading activity log: ${e.message}</td></tr>`;
+  }
+}
+
+function renderActivityRow(e) {
+  const realm   = e.realm || 'SYSTEM';
+  const cat     = e.action_category || '';
+  const action  = (e.action || '').replace(/_/g,' ');
+  const entity  = e.entity_name || e.entity_id || '—';
+  const actor   = e.actor_name  || e.actor_id  || '—';
+  const actorEmail = e.actor_email ? `<br><span style="font-size:10px;color:var(--mgray)">${e.actor_email}</span>` : '';
+  const ts      = String(e.created_at || '').slice(0, 19).replace('T',' ');
+
+  // Build changes/details cell
+  let detail = '';
+  if (e.action_category === 'EMAIL') {
+    detail = `<span class="act-detail">📧 To: ${e.email_recipient||'—'}<br>${e.email_subject||''}</span>`;
+  } else if (e.old_value && e.new_value) {
+    try {
+      const oldObj = JSON.parse(e.old_value);
+      const newObj = JSON.parse(e.new_value);
+      const keys   = [...new Set([...Object.keys(oldObj), ...Object.keys(newObj)])];
+      const diffs  = keys.map(k => {
+        const ov = oldObj[k]; const nv = newObj[k];
+        if (String(ov) === String(nv)) return '';
+        return `<span class="old">${k}: ${ov}</span> → <span class="new">${nv}</span>`;
+      }).filter(Boolean).join('<br>');
+      detail = diffs ? `<div class="act-diff">${diffs}</div>` : '';
+    } catch(_) {
+      detail = `<span class="act-detail">${e.new_value||''}</span>`;
+    }
+  } else if (e.new_value) {
+    try {
+      const nv = JSON.parse(e.new_value);
+      detail = `<span class="act-detail">${Object.entries(nv).filter(([,v])=>v!==''&&v!==null).map(([k,v])=>`${k}: ${v}`).join(' · ')}</span>`;
+    } catch(_) {
+      detail = `<span class="act-detail">${e.new_value}</span>`;
+    }
+  } else if (e.ip_notes) {
+    detail = `<span class="act-detail">${e.ip_notes}</span>`;
+  }
+
+  return `<tr>
+    <td style="font-size:11px;color:var(--mgray);white-space:nowrap">${ts}</td>
+    <td><span class="badge-realm ${realm}">${realm}</span></td>
+    <td style="font-size:12px">${actor}${actorEmail}</td>
+    <td><span class="badge-cat">${cat}</span></td>
+    <td style="font-size:12px;font-weight:500">${action}</td>
+    <td style="font-size:12px">${escHtml(entity)}</td>
+    <td>${detail}</td>
+  </tr>`;
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  const s = String(d);
+  if (s.length >= 10) return s.slice(0,10);
+  return d;
+}
+
+// ── Init ───────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => { updateUserForm(); init(); });
+</script>
+</body>
+</html>
