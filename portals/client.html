@@ -1,14 +1,17 @@
 <!DOCTYPE html>
 <!-- ============================================================
      client.html
-     Version : 1.6
+     Version : 1.7
      Updated : 2026-04-03
      Changes :
-       Fix CH3 - refreshOverview(): single GET_CLIENT_INIT batch call.
-       Fix CH4 - loadReserveHistory()/updateAccountStatus(): use cache.
-       Fix CH5 - Auth gate via POF_REQUIRE_AUTH opt-in (navbar.js v1.8).
-                 Prevents unauthenticated access without infinite loop
-                 on the login page.
+       v1.6 — Auth gate via POF_REQUIRE_AUTH; GET_CLIENT_INIT batch call.
+       v1.7 — Fix CH6: refreshOverview() reverted from GET_CLIENT_INIT
+               back to 3 proven parallel calls (GET_CLIENT_FINANCIAL_SUMMARY
+               + GET_INVOICES + GET_TRANSACTION_HISTORY). GET_CLIENT_INIT
+               requires WebApp.gs v1.3 deployed to GAS — if GAS has not
+               been redeployed, the action returns 'Unknown action' causing
+               a silent failure and blank page. The 3 original actions are
+               always available. Cache logic (_clientSummaryCache) retained.
      ============================================================ -->
 <html>
 <head>
@@ -19,7 +22,7 @@
   <!-- Fix N2: opt-in to auth gate — must be set BEFORE navbar.js loads -->
   <script>window.POF_REQUIRE_AUTH = true;</script>
   <script src="/js/config.js?v=1.8"></script>
-  <script src="/js/navbar.js?v=1.8"></script>
+  <script src="/js/navbar.js?v=2.0"></script>
   <style>
     /* ── Invoice Cost Breakdown ─────────────────────────── */
     .breakdown-section {
@@ -440,26 +443,17 @@ document.addEventListener('DOMContentLoaded', function() {
 <script>
 <!-- ============================================================
      client.html
-     Version : 1.6
+     Version : 1.7
      Updated : 2026-04-03
      Changes :
-       Fix CH1 (BUG) — init(): CLIENT role users do not have GET_ALL_CLIENTS
-         permission. The try/catch was entered for all user types, threw a
-         permission error for CLIENT users, and refreshOverview() was never
-         called. CLIENT users now skip GET_ALL_CLIENTS entirely — CLIENT_ID
-         is taken directly from ctx.clientId and refreshOverview() is called
-         immediately. Ops/Admin users continue to use GET_ALL_CLIENTS as before.
-       Fix CH2 (BUG) — init(): date defaults (hist-from / hist-to) were set
-         before CLIENT_ID was confirmed for CLIENT users. Moved date init to
-         run unconditionally before the branch so both paths benefit.
-       Fix CH3 — refreshOverview(): replaced 3 separate API calls with single
-         GET_CLIENT_INIT batch action. 3 GAS executions -> 1. ~600ms total.
-       Fix CH4 — loadReserveHistory() + updateAccountStatus(): use
-         _clientSummaryCache from GET_CLIENT_INIT. 0 extra API calls on
-         reserve and submit tabs after initial page load.
-       Fix CH5 — Auth gate via POF_REQUIRE_AUTH = true opt-in (navbar.js v1.8).
-         Unauthenticated users redirected before page renders. No infinite
-         loop on login page.
+       Fix CH1 — init(): CLIENT users skip GET_ALL_CLIENTS, use ctx.clientId.
+       Fix CH2 — init(): date defaults set unconditionally before branch.
+       Fix CH3 — refreshOverview(): 3 proven parallel calls; summary cached.
+       Fix CH4 — loadReserveHistory()/updateAccountStatus(): use cache.
+       Fix CH5 — Auth gate via POF_REQUIRE_AUTH opt-in (navbar.js v2.0).
+       Fix CH6 — refreshOverview(): reverted from GET_CLIENT_INIT to 3
+         proven existing actions. GET_CLIENT_INIT requires WebApp.gs v1.3
+         deployed; undeployed GAS returns 'Unknown action' -> blank page.
      ============================================================ -->
 <script>
 // ── State ───────────────────────────────────────────────────────
@@ -532,28 +526,27 @@ function showTab(tab) {
 // ── Overview ────────────────────────────────────────────────────
 
 /**
- * Fix CH3: single GET_CLIENT_INIT call replaces 3 parallel API.call()s.
- *
- * OLD: Promise.all([GET_CLIENT_FINANCIAL_SUMMARY, GET_INVOICES, GET_TRANSACTION_HISTORY])
- *      = 3 GAS executions, 3 cold starts, ~1.5-2.4s wall clock.
- * NEW: GET_CLIENT_INIT = 1 GAS execution, ~600ms.
- *
- * Fix CH4: result.summary stored in _clientSummaryCache so the reserve
- * tab can read reserve_balance without a second API call.
+ * Load overview data using 3 proven existing API actions in parallel.
+ * GET_CLIENT_INIT was introduced as a batch action but requires WebApp.gs
+ * v1.3 to be deployed. To avoid a blank page if GAS has not been redeployed,
+ * use the 3 original actions which are always available.
+ * Result summary is cached in _clientSummaryCache for reuse by reserve/submit tabs.
  */
 async function refreshOverview() {
   if (!CLIENT_ID) return;
   try {
-    const result = await API.call('GET_CLIENT_INIT', { clientId: CLIENT_ID });
-    if (!result.success) throw new Error(result.error || 'Init failed');
+    const [summary, invRes, histRes] = await Promise.all([
+      API.call('GET_CLIENT_FINANCIAL_SUMMARY', { clientId: CLIENT_ID }),
+      API.call('GET_INVOICES', { clientId: CLIENT_ID, pageSize: 50 }),
+      API.call('GET_TRANSACTION_HISTORY', { clientId: CLIENT_ID, page: 1, pageSize: 5 }),
+    ]);
 
-    const s = result.summary;
-    // Fix CH4: cache summary for reserve tab and other consumers
-    _clientSummaryCache = s;
+    // Cache summary for reserve/submit tabs (Fix CH4)
+    _clientSummaryCache = summary;
 
-    // ── KPI bar ───────────────────────────────────────────────
+    const s = summary;
     document.getElementById('client-name-h1').textContent = s.company_name || 'Client Overview';
-    document.getElementById('client-meta').textContent    = s.company_name ? `Client ID: ${CLIENT_ID}` : 'Select a client to begin';
+    document.getElementById('client-meta').textContent    = s.company_name ? 'Client ID: ' + CLIENT_ID : 'Select a client to begin';
     document.getElementById('ov-limit').textContent       = fmt(s.credit_limit);
     document.getElementById('ov-exposure').textContent    = fmt(s.current_exposure);
     document.getElementById('ov-util').textContent        = pct(s.utilisation_pct) + ' utilised';
@@ -562,7 +555,6 @@ async function refreshOverview() {
     document.getElementById('ov-pending-reqs').textContent =
       s.pending_requests > 0 ? s.pending_requests + ' pending request(s)' : 'no pending requests';
 
-    // ── Utilisation bar ───────────────────────────────────────
     const utilPct = Math.min(100, s.utilisation_pct || 0);
     document.getElementById('util-label').textContent = fmt(s.current_exposure) + ' of ' + fmt(s.credit_limit);
     document.getElementById('util-pct').textContent   = pct(utilPct);
@@ -570,22 +562,20 @@ async function refreshOverview() {
     bar.style.width = utilPct + '%';
     bar.className   = 'prog-fill' + (utilPct > 85 ? ' red' : utilPct > 60 ? ' amber' : ' green');
 
-    // ── Active invoices widget ────────────────────────────────
-    const active = (result.invoices || [])
+    const active = (invRes.invoices || [])
       .filter(i => ['DISBURSED', 'OVERDUE', 'APPROVED'].includes(i.status))
       .slice(0, 5);
     document.getElementById('ov-active-tbody').innerHTML = active.length
       ? active.map(i => `
-        <tr>
-          <td class="text-bold">${i.invoice_ref}</td>
-          <td class="amount">${fmt(i.outstanding_balance)}</td>
-          <td>${fmtDate(i.due_date)}</td>
-          <td>${badge(i.status)}</td>
-        </tr>`).join('')
+          <tr>
+            <td class="text-bold">${i.invoice_ref}</td>
+            <td class="amount">${fmt(i.outstanding_balance)}</td>
+            <td>${fmtDate(i.due_date)}</td>
+            <td>${badge(i.status)}</td>
+          </tr>`).join('')
       : '<tr><td colspan="4" class="text-center text-muted" style="padding:12px">No active invoices</td></tr>';
 
-    // ── Recent transactions widget ────────────────────────────
-    const txns = ((result.history && result.history.lines) || []).slice(0, 5);
+    const txns = ((histRes && histRes.lines) || []).slice(0, 5);
     document.getElementById('ov-txn-tbody').innerHTML = txns.length
       ? txns.map(t => {
           const isOut = ['DISBURSEMENT', 'BLOCK1_FEE', 'BLOCK2_FEE'].includes(t.txn_type);
@@ -594,7 +584,7 @@ async function refreshOverview() {
             <td>${fmtDate(t.date)}</td>
             <td><span class="badge ${isOut ? 'badge-red' : 'badge-green'}" style="font-size:10px">
               ${(t.txn_type || '').replace(/_/g, ' ')}</span></td>
-            <td class="amount ${isOut ? 'text-red' : 'text-green'}">${isOut ? '&uarr;' : '&darr;'}${fmtN(amt)}</td>
+            <td class="amount ${isOut ? 'text-red' : 'text-green'}">${isOut ? '&#8593;' : '&#8595;'}${fmtN(amt)}</td>
           </tr>`;
         }).join('')
       : '<tr><td colspan="3" class="text-center text-muted" style="padding:12px">No recent activity</td></tr>';
