@@ -8,9 +8,9 @@
                call. GET_INVOICES uses _requirePerm(INVOICE_VIEW) which
                CLIENT users lack -- GET_CLIENT_INIT uses enforceClientScope().
        v2.2 -- Fix CH9: HTML comment inside script block caused JS parse
-               error. --> treated as decrement+gt operator, killing all JS
-               on the page (no nav clicks, no data loaded). Fixed: version
-               comments inside script now use // line comments only.
+               error. Closing delimiter treated as decrement+gt operator,
+               killing all JS on the page (no nav clicks, no data loaded).
+               Fixed: version comments inside script use // line comments.
      ============================================================ -->
 <html>
 <head>
@@ -458,9 +458,9 @@ document.addEventListener('DOMContentLoaded', function() {
 //              which CLIENT users lack, causing Promise.all to reject.
 //              GET_CLIENT_INIT uses enforceClientScope() -- correct.
 //   Fix CH9 -- HTML comment inside <script> block caused JS parse error.
-//              --> on line 467 was treated as decrement+gt operator,
+//              The closing delimiter was treated as decrement+gt operator,
 //              killing all JS on the page (no nav clicks, no data).
-//              Fixed: replaced <!-- --> with // line comments.
+//              Fixed: replaced HTML comments with // line comments.
 // ============================================================
 // ── State ───────────────────────────────────────────────────────
 let CLIENT_ID   = null;
