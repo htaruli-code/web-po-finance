@@ -1,23 +1,29 @@
 <!DOCTYPE html>
 <!-- ============================================================
      index.html
-     Version : 2.1
-     Updated : 2026-04-02
+     Version : 2.2
+     Updated : 2026-04-03
      Changes :
-       v1.7 - External config.js + navbar.js; clears stale sessionStorage.
-       v1.9 - Cache-busting ?v=1.6 on all shared asset references.
-       v2.0 - Debug: all catch blocks now show e.message on screen so
-              the real error (JSON parse fail, network error, GAS HTML
-              error page, etc.) is visible without opening DevTools.
+       v1.7 — External config.js + navbar.js; clears stale sessionStorage.
+       v1.9 — Cache-busting ?v=1.6 on all shared asset references.
+       v2.0 — Debug: all catch blocks show e.message on screen.
+       v2.1 — (previous fix)
+       v2.2 — Asset refs bumped to ?v=1.8 (navbar.js v1.8).
+               index.html deliberately does NOT set POF_REQUIRE_AUTH.
+               navbar.js v1.7 auth gate caused an infinite redirect loop
+               here: no token -> redirect to /index.html -> no token ->
+               loop. Fixed in navbar.js v1.8: gate only fires when
+               POF_REQUIRE_AUTH = true is set before navbar.js loads.
+               Login page is a public page and must never set this flag.
      ============================================================ -->
 <html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Login — PO Financing Portal v4</title>
-  <link rel="stylesheet" href="/css/styles.css?v=1.6">
-  <script src="/js/config.js?v=1.6"></script>
-  <script src="/js/navbar.js?v=1.6"></script>
+  <link rel="stylesheet" href="/css/styles.css?v=1.8">
+  <script src="/js/config.js?v=1.8"></script>
+  <script src="/js/navbar.js?v=1.8"></script>
 </head>
 <body>
 <script>
