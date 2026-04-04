@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ============================================================
      client.html
-     Version : 2.0
+     Version : 2.1
      Updated : 2026-04-03
      Changes :
        v1.7 — Fix CH6: reverted GET_CLIENT_INIT to 3 proven API calls.
@@ -9,6 +9,13 @@
                users with a visible on-screen error (not silent blank).
                refreshOverview() errors shown on screen not just Toast.
                console.log added at init() start to show ctx in DevTools.
+       v2.1 — Fix CH8: refreshOverview() switched to single GET_CLIENT_INIT
+               call. Root cause of blank page: GET_INVOICES uses
+               _requirePerm(INVOICE_VIEW) which CLIENT users lack, causing
+               Promise.all to reject silently. GET_CLIENT_INIT uses
+               enforceClientScope() instead — correct for CLIENT role.
+               Response shape mapped: res.summary, res.invoices, res.history.
+               Also satisfies 1-API-call-per-action rule.
      ============================================================ -->
 <html>
 <head>
@@ -440,7 +447,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <script>
 <!-- ============================================================
      client.html
-     Version : 2.0
+     Version : 2.1
      Updated : 2026-04-03
      Changes :
        Fix CH1 — init(): CLIENT users skip GET_ALL_CLIENTS, use ctx.clientId.
@@ -452,6 +459,11 @@ document.addEventListener('DOMContentLoaded', function() {
          proven existing actions. GET_CLIENT_INIT requires WebApp.gs v1.3.
        Fix CH7 — init(): missing clientId shown as on-screen error not blank.
          refreshOverview() errors shown on screen. console.log ctx at init.
+       Fix CH8 — refreshOverview(): single GET_CLIENT_INIT call.
+         Root cause: GET_INVOICES uses _requirePerm(INVOICE_VIEW) which
+         CLIENT users lack, causing Promise.all to reject silently.
+         GET_CLIENT_INIT uses enforceClientScope() -- correct for CLIENT.
+     ============================================================ -->
      ============================================================ -->
 // ── State ───────────────────────────────────────────────────────
 let CLIENT_ID   = null;
@@ -535,23 +547,31 @@ function showTab(tab) {
 }
 
 // ── Overview ────────────────────────────────────────────────────
-// ── Overview ────────────────────────────────────────────────────
 
 /**
- * Load overview data using 3 proven existing API actions in parallel.
- * GET_CLIENT_INIT was introduced as a batch action but requires WebApp.gs
- * v1.3 to be deployed. To avoid a blank page if GAS has not been redeployed,
- * use the 3 original actions which are always available.
- * Result summary is cached in _clientSummaryCache for reuse by reserve/submit tabs.
+ * Fix CH8: single GET_CLIENT_INIT call replaces 3 parallel API calls.
+ *
+ * ROOT CAUSE of blank page: GET_INVOICES uses _requirePerm(INVOICE_VIEW)
+ * which CLIENT-role users do not have. This threw a permission error inside
+ * Promise.all, rejecting the entire batch silently (caught by the outer
+ * try/catch, showing "Load Error" or blank).
+ *
+ * GET_CLIENT_INIT uses enforceClientScope() — correct for CLIENT users.
+ * Response shape: { success, summary, invoices, history }
+ *   summary  — flat object (company_name, credit_limit, etc.)
+ *   invoices — array (same as getInvoiceList result .invoices)
+ *   history  — getClientTransactionHistory result ({ lines, ... })
+ *
+ * Summary cached in _clientSummaryCache for reserve/submit tabs.
  */
 async function refreshOverview() {
   if (!CLIENT_ID) return;
   try {
-    const [summary, invRes, histRes] = await Promise.all([
-      API.call('GET_CLIENT_FINANCIAL_SUMMARY', { clientId: CLIENT_ID }),
-      API.call('GET_INVOICES', { clientId: CLIENT_ID, pageSize: 50 }),
-      API.call('GET_TRANSACTION_HISTORY', { clientId: CLIENT_ID, page: 1, pageSize: 5 }),
-    ]);
+    const res = await API.call('GET_CLIENT_INIT', { clientId: CLIENT_ID });
+
+    const summary = res.summary;
+    const invRes  = { invoices: res.invoices || [] };
+    const histRes = res.history || {};
 
     // Cache summary for reserve/submit tabs (Fix CH4)
     _clientSummaryCache = summary;
