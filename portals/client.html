@@ -1,21 +1,16 @@
 <!DOCTYPE html>
 <!-- ============================================================
      client.html
-     Version : 2.1
+     Version : 2.2
      Updated : 2026-04-03
      Changes :
-       v1.7 — Fix CH6: reverted GET_CLIENT_INIT to 3 proven API calls.
-       v1.8 — Fix CH7: init() now handles missing ctx.clientId for CLIENT
-               users with a visible on-screen error (not silent blank).
-               refreshOverview() errors shown on screen not just Toast.
-               console.log added at init() start to show ctx in DevTools.
-       v2.1 — Fix CH8: refreshOverview() switched to single GET_CLIENT_INIT
-               call. Root cause of blank page: GET_INVOICES uses
-               _requirePerm(INVOICE_VIEW) which CLIENT users lack, causing
-               Promise.all to reject silently. GET_CLIENT_INIT uses
-               enforceClientScope() instead — correct for CLIENT role.
-               Response shape mapped: res.summary, res.invoices, res.history.
-               Also satisfies 1-API-call-per-action rule.
+       v2.1 -- Fix CH8: refreshOverview() switched to single GET_CLIENT_INIT
+               call. GET_INVOICES uses _requirePerm(INVOICE_VIEW) which
+               CLIENT users lack -- GET_CLIENT_INIT uses enforceClientScope().
+       v2.2 -- Fix CH9: HTML comment inside script block caused JS parse
+               error. --> treated as decrement+gt operator, killing all JS
+               on the page (no nav clicks, no data loaded). Fixed: version
+               comments inside script now use // line comments only.
      ============================================================ -->
 <html>
 <head>
@@ -445,26 +440,28 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <script>
-<!-- ============================================================
-     client.html
-     Version : 2.1
-     Updated : 2026-04-03
-     Changes :
-       Fix CH1 — init(): CLIENT users skip GET_ALL_CLIENTS, use ctx.clientId.
-       Fix CH2 — init(): date defaults set unconditionally before branch.
-       Fix CH3 — refreshOverview(): 3 proven parallel calls; summary cached.
-       Fix CH4 — loadReserveHistory()/updateAccountStatus(): use cache.
-       Fix CH5 — Auth gate via POF_REQUIRE_AUTH opt-in (navbar.js v2.0).
-       Fix CH6 — refreshOverview(): reverted from GET_CLIENT_INIT to 3
-         proven existing actions. GET_CLIENT_INIT requires WebApp.gs v1.3.
-       Fix CH7 — init(): missing clientId shown as on-screen error not blank.
-         refreshOverview() errors shown on screen. console.log ctx at init.
-       Fix CH8 — refreshOverview(): single GET_CLIENT_INIT call.
-         Root cause: GET_INVOICES uses _requirePerm(INVOICE_VIEW) which
-         CLIENT users lack, causing Promise.all to reject silently.
-         GET_CLIENT_INIT uses enforceClientScope() -- correct for CLIENT.
-     ============================================================ -->
-     ============================================================ -->
+// ============================================================
+// client.html (inline script)
+// Version : 2.2
+// Updated : 2026-04-03
+// Changes :
+//   Fix CH1 -- init(): CLIENT users skip GET_ALL_CLIENTS, use ctx.clientId.
+//   Fix CH2 -- init(): date defaults set unconditionally before branch.
+//   Fix CH3 -- refreshOverview(): 3 proven parallel calls; summary cached.
+//   Fix CH4 -- loadReserveHistory()/updateAccountStatus(): use cache.
+//   Fix CH5 -- Auth gate via POF_REQUIRE_AUTH opt-in (navbar.js v2.0).
+//   Fix CH6 -- refreshOverview(): reverted from GET_CLIENT_INIT to 3
+//              proven existing actions.
+//   Fix CH7 -- init(): missing clientId shown as on-screen error not blank.
+//   Fix CH8 -- refreshOverview(): single GET_CLIENT_INIT call.
+//              Root cause: GET_INVOICES uses _requirePerm(INVOICE_VIEW)
+//              which CLIENT users lack, causing Promise.all to reject.
+//              GET_CLIENT_INIT uses enforceClientScope() -- correct.
+//   Fix CH9 -- HTML comment inside <script> block caused JS parse error.
+//              --> on line 467 was treated as decrement+gt operator,
+//              killing all JS on the page (no nav clicks, no data).
+//              Fixed: replaced <!-- --> with // line comments.
+// ============================================================
 // ── State ───────────────────────────────────────────────────────
 let CLIENT_ID   = null;
 let histPage    = 1;
