@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ============================================================
      client.html
-     Version : 2.2
+     Version : 2.3
      Updated : 2026-04-03
      Changes :
        v2.1 -- Fix CH8: refreshOverview() switched to single GET_CLIENT_INIT
@@ -249,6 +249,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <option value="REPAYMENT">Repayments</option>
             <option value="RESIDUAL_HELD">Residuals Held</option>
             <option value="RESIDUAL_DISBURSED">Residuals Disbursed</option>
+            <option value="FUND_RELEASED">Fund Released</option>
           </select>
           <input type="date" id="hist-from" class="form-control" style="width:140px" onchange="loadHistory()">
           <input type="date" id="hist-to"   class="form-control" style="width:140px" onchange="loadHistory()">
@@ -442,7 +443,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <script>
 // ============================================================
 // client.html (inline script)
-// Version : 2.2
+// Version : 2.3
 // Updated : 2026-04-03
 // Changes :
 //   Fix CH1 -- init(): CLIENT users skip GET_ALL_CLIENTS, use ctx.clientId.
@@ -461,6 +462,9 @@ document.addEventListener('DOMContentLoaded', function() {
 //              The closing delimiter was treated as decrement+gt operator,
 //              killing all JS on the page (no nav clicks, no data).
 //              Fixed: replaced HTML comments with // line comments.
+//   Fix CH10 -- Transaction History: FUND_RELEASED txn_type added to
+//               TYPE_META and filter dropdown. Reserve fund release
+//               approval now appears in history with correct Running Balance.
 // ============================================================
 // ── State ───────────────────────────────────────────────────────
 let CLIENT_ID   = null;
@@ -926,6 +930,7 @@ async function loadHistory() {
       REPAYMENT:          { label: 'Repayment',           cls: 'badge-green',  icon: '↓' },
       RESIDUAL_HELD:      { label: 'Residual Held',       cls: 'badge-purple', icon: '⏸' },
       RESIDUAL_DISBURSED: { label: 'Residual Disbursed',  cls: 'badge-teal',   icon: '↓' },
+      FUND_RELEASED:      { label: 'Fund Released',       cls: 'badge-teal',   icon: '⬇' },
     };
 
     document.getElementById('hist-tbody').innerHTML = histData.length
