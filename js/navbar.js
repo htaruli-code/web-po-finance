@@ -1,20 +1,17 @@
 // ============================================================
 // navbar.js
-// Version : 2.0
+// Version : 2.1
 // Updated : 2026-04-03
 // Changes :
-//   v1.5 — Hardcoded _GAS_URL fallback if config.js fails to load.
-//   v1.6 — Session.load() catch: only logout on SESSION_EXPIRED.
-//   v1.7 — Fix N1: early synchronous auth gate (had infinite-loop bug).
-//   v1.8 — Fix N2: auth gate OPT-IN via POF_REQUIRE_AUTH; prevents
-//           infinite redirect loop on index.html (login page).
-//   v1.9 — Fix N3: hide documentElement synchronously to prevent
-//           DOMContentLoaded race causing permanent blank page.
-//   v2.0 — Fix N4: logout() now reveals documentElement before
-//           navigating. If a fresh session is invalid (e.g. Auth.gs
-//           timezone bug caused valid:false), logout() was called while
-//           documentElement was still hidden -> blank page with no
-//           recovery. Reveal before navigate ensures login page renders.
+//   v1.8 — Fix N2: auth gate OPT-IN via POF_REQUIRE_AUTH.
+//   v1.9 — Fix N3: hide documentElement synchronously (had race bug).
+//   v2.0 — Fix N4: logout() reveals documentElement before navigating.
+//   v2.1 — Fix N5: removed documentElement visibility hide entirely.
+//           If navbar.js fails to load or execute for any reason
+//           (network error, cached stale file, CDN issue), the hide
+//           ran but the reveal never ran -> permanent blank page with
+//           no error visible anywhere. Redirect on missing token is
+//           sufficient auth security. Removed hide + all reveal calls.
 // ============================================================
 //
 // navbar.js — PO Financing Portal v4
@@ -71,13 +68,12 @@ const _GAS_URL = 'https://script.google.com/macros/s/AKfycbwB8LVdpQPd3vCfTwXC9Xd
     throw new Error('AUTH_REDIRECT');
   }
 
-  // Step 3: token exists but session validity not yet confirmed.
-  // Hide <html> synchronously — navbar.js is in <head> so
-  // document.documentElement always exists here. Using DOMContentLoaded
-  // to hide body caused a race: _hideBody could fire AFTER Session.load()
-  // had already revealed the body (both on DOMContentLoaded, order not
-  // guaranteed) -> body hidden permanently -> blank page after login.
-  document.documentElement.style.visibility = 'hidden';
+  // Step 3: token exists. Do NOT hide the page — if navbar.js fails to
+  // fully execute for any reason (network, cache), the hide would make
+  // the page permanently blank with no recovery. The redirect on missing
+  // token (Step 2) is sufficient security. A brief flash of unstyled
+  // content is preferable to a permanently invisible page.
+  // document.documentElement.style.visibility = 'hidden'; // REMOVED
 })();
 
 // ── API caller ────────────────────────────────────────────────
@@ -158,7 +154,6 @@ const Session = {
     if (cached) {
       this._ctx = JSON.parse(cached);
       // Body was hidden by early gate — reveal it now
-      document.documentElement.style.visibility = '';
       return this._ctx;
     }
     // Token was already harvested from hash by _earlyAuthGate() before
@@ -175,7 +170,6 @@ const Session = {
       this._ctx = ctx;
       sessionStorage.setItem('pof_ctx', JSON.stringify(ctx));
       // Auth confirmed — reveal the page body
-      document.documentElement.style.visibility = '';
       return ctx;
     } catch(e) {
       // Only force logout if session is definitively expired.
@@ -184,7 +178,6 @@ const Session = {
         this.logout();
       } else {
         // Still reveal body — user is likely authenticated, just had a network hiccup
-        document.documentElement.style.visibility = '';
       }
       return null;
     }
@@ -203,7 +196,6 @@ const Session = {
   logout() {
     // Reveal page before navigating so there is no blank-page flash
     // if logout() is called while documentElement is still hidden.
-    document.documentElement.style.visibility = '';
     if (API.token) {
       API.call('REVOKE_SESSION', {}).catch(() => {});
     }
