@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ============================================================
      client.html
-     Version : 1.9
+     Version : 2.0
      Updated : 2026-04-03
      Changes :
        v1.7 — Fix CH6: reverted GET_CLIENT_INIT to 3 proven API calls.
@@ -440,7 +440,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <script>
 <!-- ============================================================
      client.html
-     Version : 1.9
+     Version : 2.0
      Updated : 2026-04-03
      Changes :
        Fix CH1 — init(): CLIENT users skip GET_ALL_CLIENTS, use ctx.clientId.
@@ -465,14 +465,6 @@ let _clientSummaryCache = null; // Fix CH4: cached from GET_CLIENT_INIT to avoid
 async function init() {
   const ctx = await requireAuth();
   if (!ctx) return;
-
-  // Diagnostic: log ctx so DevTools console shows session details
-  console.log('[POF] ctx:', JSON.stringify({
-    userType:  ctx.userType,
-    clientId:  ctx.clientId,
-    fullName:  ctx.fullName,
-    valid:     ctx.valid,
-  }));
 
   Session.renderUserBadge('user-badge');
 
