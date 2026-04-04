@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <!-- ============================================================
      admin.html
-     Version : 1.4
-     Updated : 2026-04-02
+     Version : 1.5
+     Updated : 2026-04-03
      Changes : v1.1 - Added version header; cache-busting ?v=1.6
                on all shared asset references.
      ============================================================ -->
@@ -11,9 +11,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Admin Portal — PO Financing Portal v4</title>
-  <link rel="stylesheet" href="/css/styles.css?v=1.6">
-  <script src="/js/config.js?v=1.6"></script>
-  <script src="/js/navbar.js?v=1.6"></script>
+  <link rel="stylesheet" href="/css/styles.css?v=1.8">
+  <!-- Fix N2: opt-in to auth gate -->
+  <script>window.POF_REQUIRE_AUTH = true;</script>
+  <script src="/js/config.js?v=1.8"></script>
+  <script src="/js/navbar.js?v=1.8"></script>
 </head>
 <body>
 <script>
