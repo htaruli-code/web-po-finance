@@ -1,6 +1,6 @@
 // ============================================================
 // navbar.js
-// Version : 1.9
+// Version : 2.0
 // Updated : 2026-04-03
 // Changes :
 //   v1.5 — Hardcoded _GAS_URL fallback if config.js fails to load.
@@ -8,13 +8,13 @@
 //   v1.7 — Fix N1: early synchronous auth gate (had infinite-loop bug).
 //   v1.8 — Fix N2: auth gate OPT-IN via POF_REQUIRE_AUTH; prevents
 //           infinite redirect loop on index.html (login page).
-//   v1.9 — Fix N3: blank page after login.
-//           v1.8 hid body via DOMContentLoaded listener. Session.load()
-//           reveals body also on DOMContentLoaded. Listener order not
-//           guaranteed — _hideBody could fire AFTER Session.load()
-//           revealed body, hiding it again permanently -> blank page.
-//           Fix: hide document.documentElement synchronously in IIFE
-//           (navbar.js is in <head>, documentElement always exists).
+//   v1.9 — Fix N3: hide documentElement synchronously to prevent
+//           DOMContentLoaded race causing permanent blank page.
+//   v2.0 — Fix N4: logout() now reveals documentElement before
+//           navigating. If a fresh session is invalid (e.g. Auth.gs
+//           timezone bug caused valid:false), logout() was called while
+//           documentElement was still hidden -> blank page with no
+//           recovery. Reveal before navigate ensures login page renders.
 // ============================================================
 //
 // navbar.js — PO Financing Portal v4
@@ -201,6 +201,9 @@ const Session = {
   },
 
   logout() {
+    // Reveal page before navigating so there is no blank-page flash
+    // if logout() is called while documentElement is still hidden.
+    document.documentElement.style.visibility = '';
     if (API.token) {
       API.call('REVOKE_SESSION', {}).catch(() => {});
     }
