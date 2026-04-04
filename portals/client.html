@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ============================================================
      client.html
-     Version : 1.8
+     Version : 1.9
      Updated : 2026-04-03
      Changes :
        v1.7 — Fix CH6: reverted GET_CLIENT_INIT to 3 proven API calls.
@@ -19,7 +19,7 @@
   <!-- Fix N2: opt-in to auth gate — must be set BEFORE navbar.js loads -->
   <script>window.POF_REQUIRE_AUTH = true;</script>
   <script src="/js/config.js?v=1.8"></script>
-  <script src="/js/navbar.js?v=2.0"></script>
+  <script src="/js/navbar.js?v=2.1"></script>
   <style>
     /* ── Invoice Cost Breakdown ─────────────────────────── */
     .breakdown-section {
@@ -440,7 +440,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <script>
 <!-- ============================================================
      client.html
-     Version : 1.8
+     Version : 1.9
      Updated : 2026-04-03
      Changes :
        Fix CH1 — init(): CLIENT users skip GET_ALL_CLIENTS, use ctx.clientId.
