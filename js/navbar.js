@@ -1,12 +1,22 @@
 // ============================================================
 // navbar.js
-// Version : 1.6
-// Updated : 2026-04-02
+// Version : 1.7
+// Updated : 2026-04-03
 // Changes :
 //   v1.5 — Hardcoded _GAS_URL fallback if config.js fails to load.
 //   v1.6 — Session.load() catch: only logout on SESSION_EXPIRED.
-//           Previously any error (network blip, etc.) called logout()
-//           causing immediate redirect to login right after OTP verify.
+//   v1.7 — Fix N1: early synchronous auth gate.
+//           Portal pages previously rendered their full HTML before
+//           requireAuth() ran on DOMContentLoaded. An unauthenticated
+//           visitor saw the complete sidebar + layout with no data.
+//           Fix: navbar.js now hides <body> immediately on script load
+//           (before DOM paint) if no pof_token is in sessionStorage.
+//           requireAuth() reveals the body only after session is
+//           confirmed valid. Instant redirect if token is absent;
+//           redirect after API confirm if token is invalid/expired.
+//           Also reads token from URL hash (index.html post-login
+//           redirect) before the gate fires so a fresh login is
+//           never blocked.
 // ============================================================
 //
 // navbar.js — PO Financing Portal v4
@@ -22,6 +32,39 @@
 // Hardcoded fallback — used if config.js fails to load.
 // Keep in sync with POF_CONFIG.WEB_APP_URL in config.js.
 const _GAS_URL = 'https://script.google.com/macros/s/AKfycbwB8LVdpQPd3vCfTwXC9XdswR4xS0W7fk9wFUSO4MXNIPO3_8-FKJhVyUvvKXhuFnjEmA/exec';
+
+// ── Fix N1: Early auth gate — runs synchronously before DOM paints ──
+// Absorb token from URL hash first (covers the post-login redirect from
+// index.html which appends #token=... to the portal URL).
+(function _earlyAuthGate() {
+  // Step 1: harvest token from URL hash if present (post-login redirect)
+  if (!sessionStorage.getItem('pof_token') && window.location.hash.includes('token=')) {
+    try {
+      const raw = window.location.hash.split('token=')[1].split('&')[0];
+      const tok = decodeURIComponent(raw);
+      if (tok) {
+        sessionStorage.setItem('pof_token', tok);
+        // Strip hash from URL so the token is not visible or bookmarkable
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+    } catch(e) {}
+  }
+
+  // Step 2: if still no token, redirect immediately — page should not render
+  if (!sessionStorage.getItem('pof_token')) {
+    const loginPage = (window.POF_CONFIG && window.POF_CONFIG.ROUTES && window.POF_CONFIG.ROUTES.login)
+      || '/index.html';
+    window.location.replace(loginPage);
+    // Throw to halt any further script execution in this page load
+    throw new Error('AUTH_REDIRECT');
+  }
+
+  // Step 3: hide body until requireAuth() confirms the session is valid.
+  // This prevents the page shell from flashing before the API round-trip.
+  document.addEventListener('DOMContentLoaded', function _hideBody() {
+    if (document.body) document.body.style.visibility = 'hidden';
+  }, { once: true });
+})();
 
 // ── API caller ────────────────────────────────────────────────
 const API = {
@@ -98,7 +141,15 @@ const Session = {
   async load() {
     if (this._ctx) return this._ctx;
     const cached = sessionStorage.getItem('pof_ctx');
-    if (cached) { this._ctx = JSON.parse(cached); return this._ctx; }
+    if (cached) {
+      this._ctx = JSON.parse(cached);
+      // Body was hidden by early gate — reveal it now
+      if (document.body) document.body.style.visibility = '';
+      return this._ctx;
+    }
+    // Token was already harvested from hash by _earlyAuthGate() before
+    // DOMContentLoaded, so sessionStorage is always populated here if
+    // the user arrived via a post-login redirect.
     const token = sessionStorage.getItem('pof_token');
     const loginPage = (window.POF_CONFIG && window.POF_CONFIG.ROUTES)
       ? window.POF_CONFIG.ROUTES.login : '/index.html';
@@ -109,12 +160,17 @@ const Session = {
       if (!ctx.valid) { this.logout(); return null; }
       this._ctx = ctx;
       sessionStorage.setItem('pof_ctx', JSON.stringify(ctx));
+      // Auth confirmed — reveal the page body
+      if (document.body) document.body.style.visibility = '';
       return ctx;
     } catch(e) {
       // Only force logout if session is definitively expired.
       // Other errors (network blip, permission error) must not log the user out.
       if (e.message === 'Session expired' || e.message === 'SESSION_EXPIRED') {
         this.logout();
+      } else {
+        // Still reveal body — user is likely authenticated, just had a network hiccup
+        if (document.body) document.body.style.visibility = '';
       }
       return null;
     }
