@@ -1,20 +1,20 @@
 // ============================================================
 // navbar.js
-// Version : 1.8
+// Version : 1.9
 // Updated : 2026-04-03
 // Changes :
 //   v1.5 — Hardcoded _GAS_URL fallback if config.js fails to load.
 //   v1.6 — Session.load() catch: only logout on SESSION_EXPIRED.
 //   v1.7 — Fix N1: early synchronous auth gate (had infinite-loop bug).
-//   v1.8 — Fix N2: auth gate caused infinite redirect loop on index.html.
-//           v1.7 redirected ALL pages with no token to /index.html,
-//           including index.html itself -> infinite reload loop.
-//           Fix: gate is OPT-IN only. Portal pages declare:
-//             <script>window.POF_REQUIRE_AUTH = true;</script>
-//           BEFORE loading navbar.js. index.html (login page) does NOT
-//           set this flag, so the gate is skipped entirely there.
-//           This also means any future public page (password reset, etc.)
-//           automatically stays open without needing a navbar.js change.
+//   v1.8 — Fix N2: auth gate OPT-IN via POF_REQUIRE_AUTH; prevents
+//           infinite redirect loop on index.html (login page).
+//   v1.9 — Fix N3: blank page after login.
+//           v1.8 hid body via DOMContentLoaded listener. Session.load()
+//           reveals body also on DOMContentLoaded. Listener order not
+//           guaranteed — _hideBody could fire AFTER Session.load()
+//           revealed body, hiding it again permanently -> blank page.
+//           Fix: hide document.documentElement synchronously in IIFE
+//           (navbar.js is in <head>, documentElement always exists).
 // ============================================================
 //
 // navbar.js — PO Financing Portal v4
@@ -72,11 +72,12 @@ const _GAS_URL = 'https://script.google.com/macros/s/AKfycbwB8LVdpQPd3vCfTwXC9Xd
   }
 
   // Step 3: token exists but session validity not yet confirmed.
-  // Hide the body so the page shell does not flash before requireAuth()
-  // completes its GET_SESSION_CONTEXT round-trip.
-  document.addEventListener('DOMContentLoaded', function _hideBody() {
-    if (document.body) document.body.style.visibility = 'hidden';
-  }, { once: true });
+  // Hide <html> synchronously — navbar.js is in <head> so
+  // document.documentElement always exists here. Using DOMContentLoaded
+  // to hide body caused a race: _hideBody could fire AFTER Session.load()
+  // had already revealed the body (both on DOMContentLoaded, order not
+  // guaranteed) -> body hidden permanently -> blank page after login.
+  document.documentElement.style.visibility = 'hidden';
 })();
 
 // ── API caller ────────────────────────────────────────────────
@@ -157,7 +158,7 @@ const Session = {
     if (cached) {
       this._ctx = JSON.parse(cached);
       // Body was hidden by early gate — reveal it now
-      if (document.body) document.body.style.visibility = '';
+      document.documentElement.style.visibility = '';
       return this._ctx;
     }
     // Token was already harvested from hash by _earlyAuthGate() before
@@ -174,7 +175,7 @@ const Session = {
       this._ctx = ctx;
       sessionStorage.setItem('pof_ctx', JSON.stringify(ctx));
       // Auth confirmed — reveal the page body
-      if (document.body) document.body.style.visibility = '';
+      document.documentElement.style.visibility = '';
       return ctx;
     } catch(e) {
       // Only force logout if session is definitively expired.
@@ -183,7 +184,7 @@ const Session = {
         this.logout();
       } else {
         // Still reveal body — user is likely authenticated, just had a network hiccup
-        if (document.body) document.body.style.visibility = '';
+        document.documentElement.style.visibility = '';
       }
       return null;
     }
