@@ -1,17 +1,14 @@
 <!DOCTYPE html>
 <!-- ============================================================
      client.html
-     Version : 1.7
+     Version : 1.8
      Updated : 2026-04-03
      Changes :
-       v1.6 — Auth gate via POF_REQUIRE_AUTH; GET_CLIENT_INIT batch call.
-       v1.7 — Fix CH6: refreshOverview() reverted from GET_CLIENT_INIT
-               back to 3 proven parallel calls (GET_CLIENT_FINANCIAL_SUMMARY
-               + GET_INVOICES + GET_TRANSACTION_HISTORY). GET_CLIENT_INIT
-               requires WebApp.gs v1.3 deployed to GAS — if GAS has not
-               been redeployed, the action returns 'Unknown action' causing
-               a silent failure and blank page. The 3 original actions are
-               always available. Cache logic (_clientSummaryCache) retained.
+       v1.7 — Fix CH6: reverted GET_CLIENT_INIT to 3 proven API calls.
+       v1.8 — Fix CH7: init() now handles missing ctx.clientId for CLIENT
+               users with a visible on-screen error (not silent blank).
+               refreshOverview() errors shown on screen not just Toast.
+               console.log added at init() start to show ctx in DevTools.
      ============================================================ -->
 <html>
 <head>
@@ -443,7 +440,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <script>
 <!-- ============================================================
      client.html
-     Version : 1.7
+     Version : 1.8
      Updated : 2026-04-03
      Changes :
        Fix CH1 — init(): CLIENT users skip GET_ALL_CLIENTS, use ctx.clientId.
@@ -452,8 +449,9 @@ document.addEventListener('DOMContentLoaded', function() {
        Fix CH4 — loadReserveHistory()/updateAccountStatus(): use cache.
        Fix CH5 — Auth gate via POF_REQUIRE_AUTH opt-in (navbar.js v2.0).
        Fix CH6 — refreshOverview(): reverted from GET_CLIENT_INIT to 3
-         proven existing actions. GET_CLIENT_INIT requires WebApp.gs v1.3
-         deployed; undeployed GAS returns 'Unknown action' -> blank page.
+         proven existing actions. GET_CLIENT_INIT requires WebApp.gs v1.3.
+       Fix CH7 — init(): missing clientId shown as on-screen error not blank.
+         refreshOverview() errors shown on screen. console.log ctx at init.
      ============================================================ -->
 // ── State ───────────────────────────────────────────────────────
 let CLIENT_ID   = null;
@@ -467,6 +465,15 @@ let _clientSummaryCache = null; // Fix CH4: cached from GET_CLIENT_INIT to avoid
 async function init() {
   const ctx = await requireAuth();
   if (!ctx) return;
+
+  // Diagnostic: log ctx so DevTools console shows session details
+  console.log('[POF] ctx:', JSON.stringify({
+    userType:  ctx.userType,
+    clientId:  ctx.clientId,
+    fullName:  ctx.fullName,
+    valid:     ctx.valid,
+  }));
+
   Session.renderUserBadge('user-badge');
 
   // Fix CH2: set date filter defaults unconditionally before any branch
@@ -476,8 +483,15 @@ async function init() {
   document.getElementById('hist-to').value   = today;
 
   // Fix CH1: CLIENT users cannot call GET_ALL_CLIENTS (permission denied).
-  // CLIENT_ID is available directly from ctx.clientId — use it and load immediately.
-  if (ctx.userType === 'CLIENT' && ctx.clientId) {
+  if (ctx.userType === 'CLIENT') {
+    if (!ctx.clientId) {
+      // clientId missing from session — show persistent error not just Toast
+      document.getElementById('client-name-h1').textContent = 'Account Error';
+      document.getElementById('client-meta').textContent =
+        'No client account linked to your user. Contact your administrator. (userId: ' + ctx.userId + ')';
+      console.error('[POF] CLIENT user has no clientId in ctx:', ctx);
+      return;
+    }
     CLIENT_ID = ctx.clientId;
     const sel = document.getElementById('client-selector');
     if (sel) sel.closest('div[style*="padding"]').style.display = 'none';
@@ -496,8 +510,15 @@ async function init() {
       sel.value = allClients[0].client_id;
       CLIENT_ID = allClients[0].client_id;
       refreshOverview();
+    } else {
+      document.getElementById('client-name-h1').textContent = 'No clients found';
+      document.getElementById('client-meta').textContent = 'No client records exist yet.';
     }
-  } catch(e) { Toast.error('Init error: ' + e.message); }
+  } catch(e) {
+    document.getElementById('client-name-h1').textContent = 'Load Error';
+    document.getElementById('client-meta').textContent = e.message;
+    console.error('[POF] GET_ALL_CLIENTS error:', e.message);
+  }
 }
 
 async function onClientChange() {
@@ -588,7 +609,12 @@ async function refreshOverview() {
         }).join('')
       : '<tr><td colspan="3" class="text-center text-muted" style="padding:12px">No recent activity</td></tr>';
 
-  } catch(e) { Toast.error('Overview error: ' + e.message); }
+  } catch(e) {
+    console.error('[POF] refreshOverview error:', e.message);
+    document.getElementById('client-name-h1').textContent = 'Load Error';
+    document.getElementById('client-meta').textContent = e.message;
+    Toast.error('Overview error: ' + e.message);
+  }
 }
 
 // ── Invoices ────────────────────────────────────────────────────
