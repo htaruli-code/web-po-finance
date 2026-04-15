@@ -1,10 +1,14 @@
 <!DOCTYPE html>
 <!-- ============================================================
      ops.html
-     Version : 1.5
-     Updated : 2026-04-03
-     Changes : v1.1 - Added version header; cache-busting ?v=1.6
-               on all shared asset references.
+     Version : 1.6
+     Updated : 2026-04-15
+     Changes : Fix OH4 — openDisburseModal() replaced 2 API calls
+               (GET_INVOICE_DETAIL + SIMULATE_FEES) with 1 batch call
+               GET_DISBURSE_INIT. Modal now shows full disbursement
+               breakdown: PO Value, Platform Funded, Gap, Client Reserve,
+               Client Contribution, Total to Disburse, Gap Uncovered.
+               doDisburse() toast uses total_disbursed from response.
      ============================================================ -->
 <html>
 <head>
@@ -794,31 +798,57 @@ async function doApprove() {
 
 async function openDisburseModal(invoiceId) {
   document.getElementById('disb-inv-id').value = invoiceId;
+  document.getElementById('disb-invoice-info').innerHTML = '<div class="text-muted">Loading…</div>';
+  document.getElementById('disb-waterfall-preview').innerHTML = '';
   openModal('modal-disburse');
   try {
-    const res = await API.call('GET_INVOICE_DETAIL', { invoiceId });
+    // Fix OH4: single GET_DISBURSE_INIT replaces GET_INVOICE_DETAIL + SIMULATE_FEES (2 → 1 call)
+    const res = await API.call('GET_DISBURSE_INIT', { invoiceId });
     const i   = res.invoice;
+    const gap             = res.gap             || 0;
+    const clientContrib   = res.client_contribution_preview || 0;
+    const gapUncovered    = res.gap_uncovered_preview       || 0;
+    const totalDisbursed  = res.total_disbursed_preview     || Number(i.financed_amount);
+    const reserveBal      = res.client_reserve_balance      || 0;
+
+    // Disbursement breakdown panel
+    const gapWarning = gapUncovered > 0
+      ? `<div class="alert alert-warning mt-8">⚠ Gap of ${fmt(gapUncovered)} cannot be covered — client reserve insufficient. Proceeding with partial cover.</div>`
+      : (gap > 0 ? `<div class="alert alert-success mt-8">✅ Client reserve fully covers the gap.</div>` : '');
+
     document.getElementById('disb-invoice-info').innerHTML = `
-      <div class="grid-2">
-        <div><span class="form-label">Invoice</span><div class="text-bold">${i.invoice_ref}</div></div>
-        <div><span class="form-label">Financed Amount</span><div class="text-bold text-amber">${fmt(i.financed_amount)}</div></div>
-      </div>`;
-    // Load suppliers for this client
+      <table class="table" style="font-size:13px">
+        <tbody>
+          <tr><td>Invoice</td><td class="text-right text-bold">${i.invoice_ref}</td></tr>
+          <tr><td>PO Value</td><td class="text-right">${fmt(i.po_value)}</td></tr>
+          <tr><td>Platform Funded (${i.advance_rate_pct}%)</td><td class="text-right text-amber">${fmt(i.financed_amount)}</td></tr>
+          ${gap > 0 ? `<tr><td>Gap to Full PO</td><td class="text-right">${fmt(gap)}</td></tr>
+          <tr><td>Client Reserve Available</td><td class="text-right">${fmt(reserveBal)}</td></tr>
+          <tr><td>Client Contribution</td><td class="text-right text-green">${fmt(clientContrib)}</td></tr>
+          ${gapUncovered > 0 ? `<tr><td>Gap Still Uncovered</td><td class="text-right text-red">${fmt(gapUncovered)}</td></tr>` : ''}` : ''}
+          <tr style="border-top:2px solid var(--border)"><td><strong>Total to Disburse</strong></td><td class="text-right text-bold">${fmt(totalDisbursed)}</td></tr>
+        </tbody>
+      </table>
+      ${gapWarning}`;
+
+    // Supplier dropdown
     const clientSuppliers = suppliers.filter(s => String(s.client_id) === String(i.client_id));
     document.getElementById('disb-supplier').innerHTML =
       '<option value="">Select supplier…</option>' +
       clientSuppliers.map(s => `<option value="${s.supplier_id}">${s.company_name} — ${s.bank_name} ${s.bank_account_no}</option>`).join('');
-    // Show waterfall preview
-    const wf = await API.call('SIMULATE_FEES', { clientId: i.client_id, poValue: i.po_value, advanceRatePct: i.advance_rate_pct, disbDate: i.disbursement_date, repayDate: i.due_date });
-    const wp = wf.waterfall_preview || {};
+
+    // Waterfall preview (platform capital only)
+    const wp = res.waterfall_preview || {};
     document.getElementById('disb-waterfall-preview').innerHTML = `
-      <h3 class="mb-16">Capital Waterfall Preview</h3>
+      <h3 class="mb-16">Capital Waterfall Preview (Platform Portion)</h3>
       <div class="grid-3">
         <div class="kpi"><div class="kpi-label">Layer 1: Company</div><div class="kpi-value" style="font-size:14px">${fmt(wp.company)}</div></div>
         <div class="kpi teal"><div class="kpi-label">Layer 2: Investors</div><div class="kpi-value" style="font-size:14px">${fmt(wp.investors)}</div></div>
         <div class="kpi amber"><div class="kpi-label">Layer 3: Funders</div><div class="kpi-value" style="font-size:14px">${fmt(wp.funders)}</div></div>
       </div>`;
-  } catch(e) {}
+  } catch(e) {
+    document.getElementById('disb-invoice-info').innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
+  }
 }
 
 async function doDisburse() {
@@ -829,7 +859,10 @@ async function doDisburse() {
   try {
     const res = await API.call('DISBURSE_INVOICE', { invoiceId });
     closeModal('modal-disburse');
-    Toast.success(`Disbursed ${fmt(res.amount)} via capital waterfall`);
+    const msg = res.client_contribution > 0
+      ? `Disbursed ${fmt(res.total_disbursed)} (Platform: ${fmt(res.financed_amount)} + Client reserve: ${fmt(res.client_contribution)})`
+      : `Disbursed ${fmt(res.total_disbursed)} via capital waterfall`;
+    Toast.success(msg);
     loadInvoices();
   } catch(e) { Toast.error(e.message); }
 }
