@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <!-- ============================================================
      admin.html
-     Version : 1.5
-     Updated : 2026-04-03
+     Version : 1.6
+     Updated : 2026-04-15
      Changes : v1.1 - Added version header; cache-busting ?v=1.6
                on all shared asset references.
      ============================================================ -->
@@ -62,6 +62,10 @@ document.addEventListener('DOMContentLoaded', function() {
       <button class="nav-link" onclick="showTab('activity')">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" stroke-width="2"/></svg>
         <span class="nav-label">Activity Log</span>
+      </button>
+      <button class="nav-link" onclick="showTab('costing')">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" stroke-width="2"/></svg>
+        <span class="nav-label">Costing Rules</span>
       </button>
     </div>
     <div class="sidebar-section">
@@ -338,7 +342,198 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
     </div>
 
+    <!-- ═══════════════════════════════════
+         COSTING RULES
+    ═══════════════════════════════════ -->
+    <div id="tab-costing" class="hidden">
+      <div class="topbar">
+        <h1>Costing Templates &amp; Rules</h1>
+        <button class="btn btn-primary" onclick="openTplModal(null)">+ New Template</button>
+      </div>
+
+      <!-- Template list -->
+      <div class="grid-2 mb-16" id="costing-tpl-grid" style="align-items:start">
+        <!-- Left: template list -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">Templates</span></div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Name</th><th>Max Advance</th><th>Status</th><th>Assigned Clients</th><th></th></tr></thead>
+              <tbody id="costing-tpl-tbody"><tr class="loading-row"><td colspan="5">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Right: client assignment -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">Assign Template to Client</span></div>
+          <div class="form-group">
+            <label class="form-label">Client</label>
+            <select id="assign-client" class="form-control"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Template</label>
+            <select id="assign-template" class="form-control"></select>
+          </div>
+          <button class="btn btn-success" onclick="doAssignTemplate()">Assign Template</button>
+        </div>
+      </div>
+
+      <!-- Rules for selected template -->
+      <div class="card" id="costing-rules-card" style="display:none">
+        <div class="card-header">
+          <span class="card-title" id="costing-rules-title">Rules</span>
+          <button class="btn btn-primary btn-sm" onclick="openRuleModal(null)">+ Add Rule</button>
+        </div>
+
+        <!-- Fee preview simulator -->
+        <div style="background:var(--lgray);border-radius:8px;padding:16px;margin-bottom:16px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--mgray)">FEE PREVIEW SIMULATOR</div>
+          <div class="flex-gap" style="flex-wrap:wrap;align-items:flex-end;gap:12px">
+            <div class="form-group" style="margin:0;min-width:140px">
+              <label class="form-label">PO Value</label>
+              <input type="number" id="sim-po" class="form-control" placeholder="100000" step="1000">
+            </div>
+            <div class="form-group" style="margin:0;min-width:120px">
+              <label class="form-label">Advance Rate %</label>
+              <input type="number" id="sim-rate" class="form-control" placeholder="80" step="1" max="100">
+            </div>
+            <div class="form-group" style="margin:0;min-width:100px">
+              <label class="form-label">Days</label>
+              <input type="number" id="sim-days" class="form-control" placeholder="90" step="1">
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="runFeeSimulator()">Calculate</button>
+          </div>
+          <div id="sim-result" style="margin-top:12px;font-size:13px"></div>
+        </div>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Seq</th><th>Rule Name</th><th>Method</th><th>Parameters</th><th>Base</th><th>Active</th><th></th></tr></thead>
+            <tbody id="costing-rules-tbody"><tr class="loading-row"><td colspan="7">Select a template</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </main>
+</div>
+
+<!-- Template Modal -->
+<div id="modal-tpl" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-tpl')">
+  <div class="modal">
+    <div class="modal-header"><h2 id="modal-tpl-title">Template</h2><button class="close-btn" onclick="closeModal('modal-tpl')">&#x2715;</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="tpl-id">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Template Name</label>
+          <input type="text" id="tpl-name" class="form-control" placeholder="Standard Fee Template">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select id="tpl-status" class="form-control">
+            <option value="ACTIVE">ACTIVE</option>
+            <option value="DRAFT">DRAFT</option>
+            <option value="ARCHIVED">ARCHIVED</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Max Advance Rate %</label>
+          <input type="number" id="tpl-max-rate" class="form-control" placeholder="90" max="100" step="0.5">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Min Margin Rate %</label>
+          <input type="number" id="tpl-min-margin" class="form-control" placeholder="0" step="0.1">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Effective From</label>
+          <input type="date" id="tpl-eff-from" class="form-control">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Effective To (optional)</label>
+          <input type="date" id="tpl-eff-to" class="form-control">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <textarea id="tpl-notes" class="form-control" rows="2" placeholder="Internal notes..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-tpl')">Cancel</button>
+      <button class="btn btn-success" onclick="doSaveTemplate()">Save Template</button>
+    </div>
+  </div>
+</div>
+
+<!-- Rule Modal -->
+<div id="modal-rule" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-rule')">
+  <div class="modal">
+    <div class="modal-header"><h2 id="modal-rule-title">Rule</h2><button class="close-btn" onclick="closeModal('modal-rule')">&#x2715;</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="rule-id">
+      <input type="hidden" id="rule-template-id">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Rule Name</label>
+          <input type="text" id="rule-name" class="form-control" placeholder="Block 1 Fee">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fee Type</label>
+          <select id="rule-fee-type" class="form-control">
+            <option value="PROCESSING">PROCESSING</option>
+            <option value="INTEREST">INTEREST</option>
+            <option value="PENALTY">PENALTY</option>
+            <option value="SERVICE">SERVICE</option>
+            <option value="OTHER">OTHER</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Calc Method</label>
+          <select id="rule-calc-method" class="form-control" onchange="updateParamHint()">
+            <option value="FLAT_AMOUNT">FLAT_AMOUNT</option>
+            <option value="PCT_OF_PO">PCT_OF_PO</option>
+            <option value="PCT_OF_FINANCED">PCT_OF_FINANCED</option>
+            <option value="DAILY_RATE">DAILY_RATE</option>
+            <option value="BLOCK_RATE">BLOCK_RATE</option>
+            <option value="FACTOR_RATE">FACTOR_RATE</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Applies To</label>
+          <select id="rule-applies-to" class="form-control">
+            <option value="FINANCED_AMOUNT">FINANCED_AMOUNT</option>
+            <option value="PO_VALUE">PO_VALUE</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Parameters (JSON)</label>
+        <textarea id="rule-params" class="form-control" rows="4" placeholder='{"rate": 2.15}' style="font-family:monospace;font-size:12px"></textarea>
+        <div id="rule-param-hint" style="font-size:11px;color:var(--mgray);margin-top:4px"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Sequence Order</label>
+          <input type="number" id="rule-seq" class="form-control" placeholder="10" step="10">
+        </div>
+        <div class="form-group" style="padding-top:20px">
+          <label class="form-label"><input type="checkbox" id="rule-mandatory" style="margin-right:6px">Mandatory</label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-rule')">Cancel</button>
+      <button class="btn btn-success" onclick="doSaveRule()">Save Rule</button>
+    </div>
+  </div>
 </div>
 
 <!-- Create User Modal -->
@@ -447,9 +642,10 @@ function showTab(tab) {
   document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.remove('hidden');
   document.querySelector(`[onclick="showTab('${tab}')"]`)?.classList.add('active');
-  if (tab === 'users')    loadAllUsers();
+  if (tab === 'users')         loadAllUsers();
   if (tab === 'notifications') loadNotifications();
-  if (tab === 'activity') loadActivity();
+  if (tab === 'activity')      loadActivity();
+  if (tab === 'costing')       loadCosting();
 }
 
 // ── Settings ───────────────────────────────────────────────────
@@ -727,6 +923,284 @@ function fmtDate(d) {
   const s = String(d);
   if (s.length >= 10) return s.slice(0,10);
   return d;
+}
+
+// ── Costing ────────────────────────────────────────────────────
+let costingTemplates = [];
+let costingRules     = [];
+let selectedTplId    = null;
+
+async function loadCosting() {
+  try {
+    const res = await API.call('GET_COSTING_INIT', {});
+    costingTemplates = res.templates || [];
+    costingRules     = res.rules     || [];
+    // refresh allClients if needed
+    if (!allClients.length) allClients = res.clients || [];
+    renderTemplateTable();
+    populateCostingAssignDropdowns();
+  } catch(e) { Toast.error('Failed to load costing: ' + e.message); }
+}
+
+function renderTemplateTable() {
+  // Build client map for assignment display
+  const clientMap = {};
+  allClients.forEach(c => { clientMap[c.client_id] = c.company_name; });
+
+  document.getElementById('costing-tpl-tbody').innerHTML = costingTemplates.length
+    ? costingTemplates.map(t => {
+        const assigned = allClients
+          .filter(c => String(c.active_template_id) === String(t.template_id))
+          .map(c => `<span class="badge badge-gray" style="font-size:10px">${escHtml(c.company_name)}</span>`)
+          .join(' ') || '<span style="color:var(--mgray);font-size:11px">None</span>';
+        const statusCls = t.status === 'ACTIVE' ? 'badge-green' : t.status === 'DRAFT' ? 'badge-amber' : 'badge-gray';
+        const isSelected = selectedTplId === String(t.template_id);
+        return `<tr style="${isSelected ? 'background:var(--lgray)' : ''}" onclick="selectTemplate('${t.template_id}')" style="cursor:pointer">
+          <td><strong>${escHtml(t.template_name)}</strong></td>
+          <td>${t.max_advance_rate}%</td>
+          <td><span class="badge ${statusCls}">${t.status}</span></td>
+          <td>${assigned}</td>
+          <td>
+            <div class="flex-gap">
+              <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openTplModal('${t.template_id}')">Edit</button>
+              <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();selectTemplate('${t.template_id}')">Rules</button>
+            </div>
+          </td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="5" class="text-center text-muted" style="padding:16px">No templates found</td></tr>';
+}
+
+function selectTemplate(tplId) {
+  selectedTplId = String(tplId);
+  renderTemplateTable();
+  const tpl = costingTemplates.find(t => String(t.template_id) === selectedTplId);
+  document.getElementById('costing-rules-card').style.display = '';
+  document.getElementById('costing-rules-title').textContent =
+    'Rules — ' + (tpl ? tpl.template_name : selectedTplId);
+  document.getElementById('rule-template-id').value = selectedTplId;
+  renderRulesTable();
+}
+
+function renderRulesTable() {
+  const rules = costingRules
+    .filter(r => String(r.template_id) === selectedTplId)
+    .sort((a,b) => Number(a.sequence_order||0) - Number(b.sequence_order||0));
+
+  const METH_LABELS = {
+    FLAT_AMOUNT: 'Flat Amount', PCT_OF_PO: '% of PO',
+    PCT_OF_FINANCED: '% of Financed', DAILY_RATE: 'Daily Rate',
+    BLOCK_RATE: 'Block Rate', FACTOR_RATE: 'Factor Rate',
+  };
+
+  document.getElementById('costing-rules-tbody').innerHTML = rules.length
+    ? rules.map(r => {
+        const active  = r.is_active === true || r.is_active === 'TRUE' || r.is_active === 'true';
+        const params  = formatParams(r.calc_method, r.parameters);
+        return `<tr>
+          <td style="text-align:center;color:var(--mgray)">${r.sequence_order||'—'}</td>
+          <td><strong>${escHtml(r.rule_name)}</strong><br><span style="font-size:10px;color:var(--mgray)">${r.fee_type||''}</span></td>
+          <td><span class="badge badge-blue" style="font-size:10px">${METH_LABELS[r.calc_method]||r.calc_method}</span></td>
+          <td style="font-size:12px;font-family:monospace">${escHtml(params)}</td>
+          <td style="font-size:11px;color:var(--mgray)">${r.applies_to_base||''}</td>
+          <td><span class="badge ${active?'badge-green':'badge-gray'}">${active?'Active':'Off'}</span></td>
+          <td>
+            <div class="flex-gap">
+              <button class="btn btn-ghost btn-sm" onclick="openRuleModal('${r.rule_id}')">Edit</button>
+              <button class="btn btn-ghost btn-sm" onclick="doToggleRule('${r.rule_id}')">${active?'Disable':'Enable'}</button>
+              <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="doDeleteRule('${r.rule_id}','${escHtml(r.rule_name)}')">Delete</button>
+            </div>
+          </td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="7" class="text-center text-muted" style="padding:16px">No rules yet — click + Add Rule</td></tr>';
+}
+
+function formatParams(method, paramsRaw) {
+  try {
+    const p = typeof paramsRaw === 'string' ? JSON.parse(paramsRaw) : (paramsRaw || {});
+    if (method === 'FLAT_AMOUNT')      return 'Amount: ' + (p.amount||'—');
+    if (method === 'PCT_OF_PO')        return 'Rate: ' + (p.rate||'—') + '%';
+    if (method === 'PCT_OF_FINANCED')  return 'Rate: ' + (p.rate||'—') + '%';
+    if (method === 'DAILY_RATE')       return 'Rate: ' + (p.rate||'—') + '%/day';
+    if (method === 'BLOCK_RATE')       return 'B1: ' + (p.block1_rate||'—') + '% / B2: ' + (p.block2_rate||'—') + '%';
+    if (method === 'FACTOR_RATE')      return 'Factor: ' + (p.factor||'—');
+    return JSON.stringify(p);
+  } catch(_) { return String(paramsRaw||''); }
+}
+
+function populateCostingAssignDropdowns() {
+  document.getElementById('assign-client').innerHTML =
+    '<option value="">Select client...</option>' +
+    allClients.map(c => {
+      const tpl = costingTemplates.find(t => String(t.template_id) === String(c.active_template_id));
+      const cur = tpl ? ' [' + tpl.template_name + ']' : ' [none]';
+      return `<option value="${c.client_id}">${escHtml(c.company_name)}${cur}</option>`;
+    }).join('');
+  document.getElementById('assign-template').innerHTML =
+    '<option value="">Select template...</option>' +
+    costingTemplates.map(t =>
+      `<option value="${t.template_id}">${escHtml(t.template_name)} (${t.max_advance_rate}% max)</option>`
+    ).join('');
+}
+
+// ── Template modal ─────────────────────────────────────────────
+function openTplModal(tplId) {
+  const tpl = tplId ? costingTemplates.find(t => String(t.template_id) === String(tplId)) : null;
+  document.getElementById('modal-tpl-title').textContent = tpl ? 'Edit Template' : 'New Template';
+  document.getElementById('tpl-id').value        = tpl ? tpl.template_id    : '';
+  document.getElementById('tpl-name').value      = tpl ? tpl.template_name  : '';
+  document.getElementById('tpl-status').value    = tpl ? (tpl.status||'ACTIVE') : 'ACTIVE';
+  document.getElementById('tpl-max-rate').value  = tpl ? tpl.max_advance_rate : 90;
+  document.getElementById('tpl-min-margin').value = tpl ? (tpl.min_margin_rate||0) : 0;
+  document.getElementById('tpl-eff-from').value  = tpl ? String(tpl.effective_from||'').slice(0,10) : '';
+  document.getElementById('tpl-eff-to').value    = tpl ? String(tpl.effective_to||'').slice(0,10)   : '';
+  document.getElementById('tpl-notes').value     = tpl ? (tpl.notes||'') : '';
+  openModal('modal-tpl');
+}
+
+async function doSaveTemplate() {
+  const templateId    = document.getElementById('tpl-id').value;
+  const templateName  = document.getElementById('tpl-name').value.trim();
+  const status        = document.getElementById('tpl-status').value;
+  const maxAdvanceRate = parseFloat(document.getElementById('tpl-max-rate').value);
+  const minMarginRate  = parseFloat(document.getElementById('tpl-min-margin').value||'0');
+  const effectiveFrom = document.getElementById('tpl-eff-from').value;
+  const effectiveTo   = document.getElementById('tpl-eff-to').value;
+  const notes         = document.getElementById('tpl-notes').value;
+  if (!templateName) return Toast.error('Template name required');
+  if (isNaN(maxAdvanceRate)) return Toast.error('Max advance rate required');
+  try {
+    await API.call('SAVE_TEMPLATE', { templateId, templateName, status, maxAdvanceRate, minMarginRate, effectiveFrom, effectiveTo, notes });
+    closeModal('modal-tpl');
+    Toast.success('Template saved');
+    await loadCosting();
+  } catch(e) { Toast.error(e.message); }
+}
+
+// ── Rule modal ─────────────────────────────────────────────────
+const PARAM_HINTS = {
+  FLAT_AMOUNT:      '{"amount": 500}',
+  PCT_OF_PO:        '{"rate": 1.5}',
+  PCT_OF_FINANCED:  '{"rate": 2.15}',
+  DAILY_RATE:       '{"rate": 0.05}',
+  BLOCK_RATE:       '{"block1_rate": 2.15, "block2_rate": 0.717, "block_days": 30, "derive_from_block1": false}',
+  FACTOR_RATE:      '{"factor": 1.035}',
+};
+
+function updateParamHint() {
+  const method = document.getElementById('rule-calc-method').value;
+  document.getElementById('rule-param-hint').textContent = 'Example: ' + (PARAM_HINTS[method]||'{}');
+}
+
+function openRuleModal(ruleId) {
+  const rule = ruleId ? costingRules.find(r => String(r.rule_id) === String(ruleId)) : null;
+  document.getElementById('modal-rule-title').textContent = rule ? 'Edit Rule' : 'New Rule';
+  document.getElementById('rule-id').value          = rule ? rule.rule_id     : '';
+  document.getElementById('rule-template-id').value = selectedTplId           || '';
+  document.getElementById('rule-name').value        = rule ? rule.rule_name   : '';
+  document.getElementById('rule-fee-type').value    = rule ? (rule.fee_type||'PROCESSING') : 'PROCESSING';
+  document.getElementById('rule-calc-method').value = rule ? rule.calc_method : 'PCT_OF_FINANCED';
+  document.getElementById('rule-applies-to').value  = rule ? (rule.applies_to_base||'FINANCED_AMOUNT') : 'FINANCED_AMOUNT';
+  const params = rule ? (typeof rule.parameters === 'string' ? rule.parameters : JSON.stringify(rule.parameters, null, 2)) : '{}';
+  document.getElementById('rule-params').value      = params;
+  document.getElementById('rule-seq').value         = rule ? (rule.sequence_order||10) : 10;
+  document.getElementById('rule-mandatory').checked = rule ? (rule.is_mandatory === true || rule.is_mandatory === 'TRUE') : false;
+  updateParamHint();
+  openModal('modal-rule');
+}
+
+async function doSaveRule() {
+  const ruleId       = document.getElementById('rule-id').value;
+  const templateId   = document.getElementById('rule-template-id').value;
+  const ruleName     = document.getElementById('rule-name').value.trim();
+  const feeType      = document.getElementById('rule-fee-type').value;
+  const calcMethod   = document.getElementById('rule-calc-method').value;
+  const appliesToBase = document.getElementById('rule-applies-to').value;
+  const paramsRaw    = document.getElementById('rule-params').value.trim();
+  const sequenceOrder = parseInt(document.getElementById('rule-seq').value) || 10;
+  const isMandatory  = document.getElementById('rule-mandatory').checked;
+  if (!templateId) return Toast.error('No template selected');
+  if (!ruleName)   return Toast.error('Rule name required');
+  try { JSON.parse(paramsRaw); } catch(_) { return Toast.error('Parameters must be valid JSON'); }
+  try {
+    await API.call('SAVE_RULE', { ruleId, templateId, ruleName, feeType, calcMethod,
+      parameters: paramsRaw, appliesToBase, sequenceOrder, isMandatory });
+    closeModal('modal-rule');
+    Toast.success('Rule saved');
+    await loadCosting();
+    if (selectedTplId) renderRulesTable();
+  } catch(e) { Toast.error(e.message); }
+}
+
+async function doToggleRule(ruleId) {
+  try {
+    const res = await API.call('TOGGLE_RULE', { ruleId });
+    Toast.success('Rule ' + (res.is_active ? 'enabled' : 'disabled'));
+    await loadCosting();
+    if (selectedTplId) renderRulesTable();
+  } catch(e) { Toast.error(e.message); }
+}
+
+async function doDeleteRule(ruleId, ruleName) {
+  if (!confirm('Delete rule "' + ruleName + '"? This cannot be undone.')) return;
+  try {
+    await API.call('DELETE_RULE', { ruleId });
+    Toast.success('Rule deleted');
+    await loadCosting();
+    if (selectedTplId) renderRulesTable();
+  } catch(e) { Toast.error(e.message); }
+}
+
+async function doAssignTemplate() {
+  const clientId   = document.getElementById('assign-client').value;
+  const templateId = document.getElementById('assign-template').value;
+  if (!clientId || !templateId) return Toast.error('Select both client and template');
+  try {
+    await API.call('ASSIGN_TEMPLATE', { clientId, templateId });
+    Toast.success('Template assigned successfully');
+    await loadCosting();
+  } catch(e) { Toast.error(e.message); }
+}
+
+// ── Fee simulator ──────────────────────────────────────────────
+async function runFeeSimulator() {
+  if (!selectedTplId) return Toast.error('Select a template first');
+  const poValue       = parseFloat(document.getElementById('sim-po').value);
+  const advanceRatePct = parseFloat(document.getElementById('sim-rate').value);
+  const days          = parseInt(document.getElementById('sim-days').value);
+  if (isNaN(poValue) || isNaN(advanceRatePct) || isNaN(days)) return Toast.error('Fill all simulator fields');
+  const tpl = costingTemplates.find(t => String(t.template_id) === selectedTplId);
+  if (!tpl) return;
+  // Use a dummy client — find first assigned client or pass templateId directly
+  const assignedClient = allClients.find(c => String(c.active_template_id) === selectedTplId);
+  if (!assignedClient) {
+    document.getElementById('sim-result').innerHTML =
+      '<span style="color:var(--mgray)">Assign this template to a client first to run the simulator.</span>';
+    return;
+  }
+  try {
+    const today    = new Date().toISOString().split('T')[0];
+    const repayDate = new Date(Date.now() + days * 86400000).toISOString().split('T')[0];
+    const res = await API.call('SIMULATE_FEES', {
+      clientId: assignedClient.client_id, poValue, advanceRatePct, disbDate: today, repayDate,
+    });
+    const cur = res.currency || 'MYR';
+    const fmt = n => cur + ' ' + Number(n||0).toLocaleString('en-MY', {minimumFractionDigits:2, maximumFractionDigits:2});
+    document.getElementById('sim-result').innerHTML = `
+      <div class="grid-4" style="gap:12px">
+        <div class="kpi" style="padding:10px"><div class="kpi-label">Financed</div><div class="kpi-value" style="font-size:14px">${fmt(res.financed_amount)}</div></div>
+        <div class="kpi amber" style="padding:10px"><div class="kpi-label">Total Fees</div><div class="kpi-value" style="font-size:14px">${fmt(res.total_fees)}</div></div>
+        <div class="kpi" style="padding:10px"><div class="kpi-label">Total Repayable</div><div class="kpi-value" style="font-size:14px">${fmt(res.total_repayable)}</div></div>
+        <div class="kpi teal" style="padding:10px"><div class="kpi-label">EAR</div><div class="kpi-value" style="font-size:14px">${Number(res.effective_annual_rate||0).toFixed(2)}%</div></div>
+      </div>
+      <table class="table mt-12" style="font-size:12px">
+        <thead><tr><th>Rule</th><th>Method</th><th class="text-right">Fee</th></tr></thead>
+        <tbody>${(res.fee_lines||[]).map(fl =>
+          `<tr><td>${escHtml(fl.rule_name||'')}</td><td>${fl.calc_method||''}</td><td class="text-right">${fmt(fl.fee_amount)}</td></tr>`
+        ).join('')}</tbody>
+      </table>`;
+  } catch(e) { Toast.error(e.message); }
 }
 
 // ── Init ───────────────────────────────────────────────────────
