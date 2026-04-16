@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ============================================================
      admin.html
-     Version : 1.7
+     Version : 1.8
      Updated : 2026-04-15
      Changes : v1.1 - Added version header; cache-busting ?v=1.6
                on all shared asset references.
@@ -497,7 +497,7 @@ document.addEventListener('DOMContentLoaded', function() {
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Calculation Method</label>
-          <select id="rule-calc-method" class="form-control" onchange="renderParamFields()">
+          <select id="rule-calc-method" class="form-control" onchange="renderParamFields(null)">
             <option value="FLAT_AMOUNT">Flat Amount — fixed fee regardless of PO size</option>
             <option value="PCT_OF_PO">% of PO Value — percentage of the full PO</option>
             <option value="PCT_OF_FINANCED">% of Financed Amount — percentage of advance only</option>
@@ -1084,7 +1084,11 @@ const PARAM_DEFS = {
     fields: [
       { id:'p-amount', label:'Fee Amount', type:'number', placeholder:'500', hint:'Fixed fee in base currency (e.g. 500 = MYR 500)', step:'0.01', min:'0' },
     ],
-    toParams: () => ({ amount: parseFloat(document.getElementById('p-amount').value) || 0 }),
+    toParams: () => {
+      const el = document.getElementById('p-amount');
+      if (!el) throw new Error('Parameter fields not rendered — please reopen the modal');
+      return { amount: parseFloat(el.value) || 0 };
+    },
     fromParams: (p) => { document.getElementById('p-amount').value = p.amount || ''; },
   },
   PCT_OF_PO: {
@@ -1092,7 +1096,11 @@ const PARAM_DEFS = {
     fields: [
       { id:'p-rate', label:'Rate (%)', type:'number', placeholder:'1.5', hint:'e.g. 1.5 means 1.5% of PO value', step:'0.001', min:'0' },
     ],
-    toParams: () => ({ rate: parseFloat(document.getElementById('p-rate').value) || 0 }),
+    toParams: () => {
+      const el = document.getElementById('p-rate');
+      if (!el) throw new Error('Parameter fields not rendered — please reopen the modal');
+      return { rate: parseFloat(el.value) || 0 };
+    },
     fromParams: (p) => { document.getElementById('p-rate').value = p.rate || ''; },
   },
   PCT_OF_FINANCED: {
@@ -1100,7 +1108,11 @@ const PARAM_DEFS = {
     fields: [
       { id:'p-rate', label:'Rate (%)', type:'number', placeholder:'2.15', hint:'e.g. 2.15 means 2.15% of financed amount', step:'0.001', min:'0' },
     ],
-    toParams: () => ({ rate: parseFloat(document.getElementById('p-rate').value) || 0 }),
+    toParams: () => {
+      const el = document.getElementById('p-rate');
+      if (!el) throw new Error('Parameter fields not rendered — please reopen the modal');
+      return { rate: parseFloat(el.value) || 0 };
+    },
     fromParams: (p) => { document.getElementById('p-rate').value = p.rate || ''; },
   },
   DAILY_RATE: {
@@ -1108,7 +1120,11 @@ const PARAM_DEFS = {
     fields: [
       { id:'p-rate', label:'Daily Rate (%)', type:'number', placeholder:'0.05', hint:'e.g. 0.05 means 0.05% per day', step:'0.001', min:'0' },
     ],
-    toParams: () => ({ rate: parseFloat(document.getElementById('p-rate').value) || 0 }),
+    toParams: () => {
+      const el = document.getElementById('p-rate');
+      if (!el) throw new Error('Parameter fields not rendered — please reopen the modal');
+      return { rate: parseFloat(el.value) || 0 };
+    },
     fromParams: (p) => { document.getElementById('p-rate').value = p.rate || ''; },
   },
   BLOCK_RATE: {
@@ -1119,12 +1135,19 @@ const PARAM_DEFS = {
       { id:'p-block2-rate', label:'Block 2 Rate (%)', type:'number', placeholder:'0.717',hint:'Fee % per block period beyond Block 1', step:'0.001', min:'0' },
       { id:'p-derive',      label:'Derive Block 2 rate from Block 1 (divide by 3)', type:'checkbox', hint:'When checked, Block 2 rate = Block 1 rate / 3 automatically' },
     ],
-    toParams: () => ({
-      block1_rate:         parseFloat(document.getElementById('p-block1-rate').value) || 0,
-      block_days:          parseInt(document.getElementById('p-block-days').value)    || 30,
-      block2_rate:         parseFloat(document.getElementById('p-block2-rate').value) || 0,
-      derive_from_block1:  document.getElementById('p-derive').checked,
-    }),
+    toParams: () => {
+      const b1El  = document.getElementById('p-block1-rate');
+      const bdEl  = document.getElementById('p-block-days');
+      const b2El  = document.getElementById('p-block2-rate');
+      const derEl = document.getElementById('p-derive');
+      if (!b1El) throw new Error('Parameter fields not rendered — please reopen the modal');
+      return {
+        block1_rate:        parseFloat(b1El.value)  || 0,
+        block_days:         parseInt(bdEl.value)    || 30,
+        block2_rate:        parseFloat(b2El.value)  || 0,
+        derive_from_block1: derEl.checked,
+      };
+    },
     fromParams: (p) => {
       document.getElementById('p-block1-rate').value = p.block1_rate || '';
       document.getElementById('p-block-days').value  = p.block_days  || 30;
@@ -1137,7 +1160,11 @@ const PARAM_DEFS = {
     fields: [
       { id:'p-factor', label:'Factor', type:'number', placeholder:'1.035', hint:'e.g. 1.035 = client repays 103.5% of financed amount', step:'0.001', min:'1' },
     ],
-    toParams: () => ({ factor: parseFloat(document.getElementById('p-factor').value) || 1 }),
+    toParams: () => {
+      const el = document.getElementById('p-factor');
+      if (!el) throw new Error('Parameter fields not rendered — please reopen the modal');
+      return { factor: parseFloat(el.value) || 1 };
+    },
     fromParams: (p) => { document.getElementById('p-factor').value = p.factor || ''; },
   },
 };
