@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ============================================================
      admin.html
-     Version : 1.6
+     Version : 1.7
      Updated : 2026-04-15
      Changes : v1.1 - Added version header; cache-busting ?v=1.6
                on all shared asset references.
@@ -496,29 +496,25 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Calc Method</label>
-          <select id="rule-calc-method" class="form-control" onchange="updateParamHint()">
-            <option value="FLAT_AMOUNT">FLAT_AMOUNT</option>
-            <option value="PCT_OF_PO">PCT_OF_PO</option>
-            <option value="PCT_OF_FINANCED">PCT_OF_FINANCED</option>
-            <option value="DAILY_RATE">DAILY_RATE</option>
-            <option value="BLOCK_RATE">BLOCK_RATE</option>
-            <option value="FACTOR_RATE">FACTOR_RATE</option>
+          <label class="form-label">Calculation Method</label>
+          <select id="rule-calc-method" class="form-control" onchange="renderParamFields()">
+            <option value="FLAT_AMOUNT">Flat Amount — fixed fee regardless of PO size</option>
+            <option value="PCT_OF_PO">% of PO Value — percentage of the full PO</option>
+            <option value="PCT_OF_FINANCED">% of Financed Amount — percentage of advance only</option>
+            <option value="DAILY_RATE">Daily Rate — accrues per day on financed amount</option>
+            <option value="BLOCK_RATE">Block Rate — tiered fee by time blocks</option>
+            <option value="FACTOR_RATE">Factor Rate — multiply financed amount by factor</option>
           </select>
         </div>
         <div class="form-group">
           <label class="form-label">Applies To</label>
           <select id="rule-applies-to" class="form-control">
-            <option value="FINANCED_AMOUNT">FINANCED_AMOUNT</option>
-            <option value="PO_VALUE">PO_VALUE</option>
+            <option value="FINANCED_AMOUNT">Financed Amount (advance)</option>
+            <option value="PO_VALUE">Full PO Value</option>
           </select>
         </div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Parameters (JSON)</label>
-        <textarea id="rule-params" class="form-control" rows="4" placeholder='{"rate": 2.15}' style="font-family:monospace;font-size:12px"></textarea>
-        <div id="rule-param-hint" style="font-size:11px;color:var(--mgray);margin-top:4px"></div>
-      </div>
+      <div id="rule-param-fields" style="background:var(--lgray);border-radius:8px;padding:16px;margin-bottom:4px"></div>
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Sequence Order</label>
@@ -1079,18 +1075,126 @@ async function doSaveTemplate() {
 }
 
 // ── Rule modal ─────────────────────────────────────────────────
-const PARAM_HINTS = {
-  FLAT_AMOUNT:      '{"amount": 500}',
-  PCT_OF_PO:        '{"rate": 1.5}',
-  PCT_OF_FINANCED:  '{"rate": 2.15}',
-  DAILY_RATE:       '{"rate": 0.05}',
-  BLOCK_RATE:       '{"block1_rate": 2.15, "block2_rate": 0.717, "block_days": 30, "derive_from_block1": false}',
-  FACTOR_RATE:      '{"factor": 1.035}',
+// ── Dynamic parameter fields per calc method ───────────────────
+// Each method definition has: fields[] and toParams()/fromParams()
+// fields: { id, label, type, placeholder, hint, step, min }
+const PARAM_DEFS = {
+  FLAT_AMOUNT: {
+    desc: 'A fixed fee charged once regardless of PO size or duration.',
+    fields: [
+      { id:'p-amount', label:'Fee Amount', type:'number', placeholder:'500', hint:'Fixed fee in base currency (e.g. 500 = MYR 500)', step:'0.01', min:'0' },
+    ],
+    toParams: () => ({ amount: parseFloat(document.getElementById('p-amount').value) || 0 }),
+    fromParams: (p) => { document.getElementById('p-amount').value = p.amount || ''; },
+  },
+  PCT_OF_PO: {
+    desc: 'A percentage fee calculated on the full PO value.',
+    fields: [
+      { id:'p-rate', label:'Rate (%)', type:'number', placeholder:'1.5', hint:'e.g. 1.5 means 1.5% of PO value', step:'0.001', min:'0' },
+    ],
+    toParams: () => ({ rate: parseFloat(document.getElementById('p-rate').value) || 0 }),
+    fromParams: (p) => { document.getElementById('p-rate').value = p.rate || ''; },
+  },
+  PCT_OF_FINANCED: {
+    desc: 'A percentage fee calculated on the financed (advance) amount only.',
+    fields: [
+      { id:'p-rate', label:'Rate (%)', type:'number', placeholder:'2.15', hint:'e.g. 2.15 means 2.15% of financed amount', step:'0.001', min:'0' },
+    ],
+    toParams: () => ({ rate: parseFloat(document.getElementById('p-rate').value) || 0 }),
+    fromParams: (p) => { document.getElementById('p-rate').value = p.rate || ''; },
+  },
+  DAILY_RATE: {
+    desc: 'An interest rate that accrues every day on the outstanding financed amount.',
+    fields: [
+      { id:'p-rate', label:'Daily Rate (%)', type:'number', placeholder:'0.05', hint:'e.g. 0.05 means 0.05% per day', step:'0.001', min:'0' },
+    ],
+    toParams: () => ({ rate: parseFloat(document.getElementById('p-rate').value) || 0 }),
+    fromParams: (p) => { document.getElementById('p-rate').value = p.rate || ''; },
+  },
+  BLOCK_RATE: {
+    desc: 'Tiered fee by time blocks. Block 1 covers the first N days; Block 2 covers any additional days.',
+    fields: [
+      { id:'p-block1-rate', label:'Block 1 Rate (%)', type:'number', placeholder:'2.15', hint:'Fee % for the first block period (e.g. first 30 days)', step:'0.001', min:'0' },
+      { id:'p-block-days',  label:'Block 1 Days',     type:'number', placeholder:'30',   hint:'How many days are in Block 1 (e.g. 30)', step:'1', min:'1' },
+      { id:'p-block2-rate', label:'Block 2 Rate (%)', type:'number', placeholder:'0.717',hint:'Fee % per block period beyond Block 1', step:'0.001', min:'0' },
+      { id:'p-derive',      label:'Derive Block 2 rate from Block 1 (divide by 3)', type:'checkbox', hint:'When checked, Block 2 rate = Block 1 rate / 3 automatically' },
+    ],
+    toParams: () => ({
+      block1_rate:         parseFloat(document.getElementById('p-block1-rate').value) || 0,
+      block_days:          parseInt(document.getElementById('p-block-days').value)    || 30,
+      block2_rate:         parseFloat(document.getElementById('p-block2-rate').value) || 0,
+      derive_from_block1:  document.getElementById('p-derive').checked,
+    }),
+    fromParams: (p) => {
+      document.getElementById('p-block1-rate').value = p.block1_rate || '';
+      document.getElementById('p-block-days').value  = p.block_days  || 30;
+      document.getElementById('p-block2-rate').value = p.block2_rate || '';
+      document.getElementById('p-derive').checked    = p.derive_from_block1 === true || p.derive_from_block1 === 'true';
+    },
+  },
+  FACTOR_RATE: {
+    desc: 'Multiply the financed amount by a factor to get total repayable. Factor 1.035 means 3.5% total cost.',
+    fields: [
+      { id:'p-factor', label:'Factor', type:'number', placeholder:'1.035', hint:'e.g. 1.035 = client repays 103.5% of financed amount', step:'0.001', min:'1' },
+    ],
+    toParams: () => ({ factor: parseFloat(document.getElementById('p-factor').value) || 1 }),
+    fromParams: (p) => { document.getElementById('p-factor').value = p.factor || ''; },
+  },
 };
 
-function updateParamHint() {
+function renderParamFields(existingParams) {
   const method = document.getElementById('rule-calc-method').value;
-  document.getElementById('rule-param-hint').textContent = 'Example: ' + (PARAM_HINTS[method]||'{}');
+  const def    = PARAM_DEFS[method];
+  if (!def) { document.getElementById('rule-param-fields').innerHTML = ''; return; }
+
+  const p = existingParams || {};
+  let html = `<div style="font-size:11px;font-weight:600;color:var(--mgray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">${method.replace(/_/g,' ')}</div>`;
+  html += `<p style="font-size:12px;color:var(--mgray);margin:0 0 12px">${def.desc}</p>`;
+
+  // Render fields two-per-row where possible
+  const nonCheckboxFields = def.fields.filter(f => f.type !== 'checkbox');
+  const checkboxFields    = def.fields.filter(f => f.type === 'checkbox');
+
+  for (let i = 0; i < nonCheckboxFields.length; i += 2) {
+    html += '<div class="form-row">';
+    for (let j = i; j < Math.min(i+2, nonCheckboxFields.length); j++) {
+      const f = nonCheckboxFields[j];
+      html += `<div class="form-group">
+        <label class="form-label">${f.label}</label>
+        <input type="${f.type}" id="${f.id}" class="form-control" placeholder="${f.placeholder||''}" step="${f.step||'any'}" min="${f.min||'0'}">
+        <div style="font-size:11px;color:var(--mgray);margin-top:3px">${f.hint||''}</div>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  checkboxFields.forEach(f => {
+    html += `<div class="form-group" style="margin-top:4px">
+      <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="${f.id}" style="width:16px;height:16px">
+        <span>${f.label}</span>
+      </label>
+      <div style="font-size:11px;color:var(--mgray);margin-top:3px">${f.hint||''}</div>
+    </div>`;
+  });
+
+  document.getElementById('rule-param-fields').innerHTML = html;
+
+  // Populate values if editing existing rule
+  if (existingParams && def.fromParams) {
+    def.fromParams(existingParams);
+  }
+}
+
+function _readParamFields() {
+  const method = document.getElementById('rule-calc-method').value;
+  const def    = PARAM_DEFS[method];
+  if (!def) return '{}';
+  try {
+    return JSON.stringify(def.toParams());
+  } catch(e) {
+    return '{}';
+  }
 }
 
 function openRuleModal(ruleId) {
@@ -1102,27 +1206,33 @@ function openRuleModal(ruleId) {
   document.getElementById('rule-fee-type').value    = rule ? (rule.fee_type||'PROCESSING') : 'PROCESSING';
   document.getElementById('rule-calc-method').value = rule ? rule.calc_method : 'PCT_OF_FINANCED';
   document.getElementById('rule-applies-to').value  = rule ? (rule.applies_to_base||'FINANCED_AMOUNT') : 'FINANCED_AMOUNT';
-  const params = rule ? (typeof rule.parameters === 'string' ? rule.parameters : JSON.stringify(rule.parameters, null, 2)) : '{}';
-  document.getElementById('rule-params').value      = params;
   document.getElementById('rule-seq').value         = rule ? (rule.sequence_order||10) : 10;
   document.getElementById('rule-mandatory').checked = rule ? (rule.is_mandatory === true || rule.is_mandatory === 'TRUE') : false;
-  updateParamHint();
+
+  // Parse existing params to populate dynamic fields
+  let existingParams = null;
+  if (rule && rule.parameters) {
+    try {
+      existingParams = typeof rule.parameters === 'string' ? JSON.parse(rule.parameters) : rule.parameters;
+    } catch(_) {}
+  }
+  renderParamFields(existingParams);
   openModal('modal-rule');
 }
 
 async function doSaveRule() {
-  const ruleId       = document.getElementById('rule-id').value;
-  const templateId   = document.getElementById('rule-template-id').value;
-  const ruleName     = document.getElementById('rule-name').value.trim();
-  const feeType      = document.getElementById('rule-fee-type').value;
-  const calcMethod   = document.getElementById('rule-calc-method').value;
+  const ruleId        = document.getElementById('rule-id').value;
+  const templateId    = document.getElementById('rule-template-id').value;
+  const ruleName      = document.getElementById('rule-name').value.trim();
+  const feeType       = document.getElementById('rule-fee-type').value;
+  const calcMethod    = document.getElementById('rule-calc-method').value;
   const appliesToBase = document.getElementById('rule-applies-to').value;
-  const paramsRaw    = document.getElementById('rule-params').value.trim();
   const sequenceOrder = parseInt(document.getElementById('rule-seq').value) || 10;
-  const isMandatory  = document.getElementById('rule-mandatory').checked;
+  const isMandatory   = document.getElementById('rule-mandatory').checked;
+  const paramsRaw     = _readParamFields();
+
   if (!templateId) return Toast.error('No template selected');
   if (!ruleName)   return Toast.error('Rule name required');
-  try { JSON.parse(paramsRaw); } catch(_) { return Toast.error('Parameters must be valid JSON'); }
   try {
     await API.call('SAVE_RULE', { ruleId, templateId, ruleName, feeType, calcMethod,
       parameters: paramsRaw, appliesToBase, sequenceOrder, isMandatory });
