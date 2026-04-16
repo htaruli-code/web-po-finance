@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <!-- ============================================================
      client.html
-     Version : 2.3
-     Updated : 2026-04-03
+     Version : 2.4
+     Updated : 2026-04-15
      Changes :
        v2.1 -- Fix CH8: refreshOverview() switched to single GET_CLIENT_INIT
                call. GET_INVOICES uses _requirePerm(INVOICE_VIEW) which
@@ -11,6 +11,9 @@
                error. Closing delimiter treated as decrement+gt operator,
                killing all JS on the page (no nav clicks, no data loaded).
                Fixed: version comments inside script use // line comments.
+       v2.4 -- Fix CH11: RESERVE_DEPOSIT txn_type added to TYPE_META and
+               filter dropdown. Reserve deposits now appear in Transaction
+               History with correct label, badge colour, and Running Balance.
      ============================================================ -->
 <html>
 <head>
@@ -250,6 +253,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <option value="RESIDUAL_HELD">Residuals Held</option>
             <option value="RESIDUAL_DISBURSED">Residuals Disbursed</option>
             <option value="FUND_RELEASED">Fund Released</option>
+            <option value="RESERVE_DEPOSIT">Reserve Deposits</option>
           </select>
           <input type="date" id="hist-from" class="form-control" style="width:140px" onchange="loadHistory()">
           <input type="date" id="hist-to"   class="form-control" style="width:140px" onchange="loadHistory()">
@@ -443,8 +447,8 @@ document.addEventListener('DOMContentLoaded', function() {
 <script>
 // ============================================================
 // client.html (inline script)
-// Version : 2.3
-// Updated : 2026-04-03
+// Version : 2.4
+// Updated : 2026-04-15
 // Changes :
 //   Fix CH1 -- init(): CLIENT users skip GET_ALL_CLIENTS, use ctx.clientId.
 //   Fix CH2 -- init(): date defaults set unconditionally before branch.
@@ -465,6 +469,10 @@ document.addEventListener('DOMContentLoaded', function() {
 //   Fix CH10 -- Transaction History: FUND_RELEASED txn_type added to
 //               TYPE_META and filter dropdown. Reserve fund release
 //               approval now appears in history with correct Running Balance.
+//   Fix CH11 -- Transaction History: RESERVE_DEPOSIT txn_type added to
+//               TYPE_META and filter dropdown. Reserve deposits now appear
+//               in history with correct label and Running Balance after
+//               RSV10 fix added postClientBalance() to postReserveDeposit().
 // ============================================================
 // ── State ───────────────────────────────────────────────────────
 let CLIENT_ID   = null;
@@ -931,6 +939,7 @@ async function loadHistory() {
       RESIDUAL_HELD:      { label: 'Residual Held',       cls: 'badge-purple', icon: '⏸' },
       RESIDUAL_DISBURSED: { label: 'Residual Disbursed',  cls: 'badge-teal',   icon: '↓' },
       FUND_RELEASED:      { label: 'Fund Released',       cls: 'badge-teal',   icon: '⬇' },
+      RESERVE_DEPOSIT:    { label: 'Reserve Deposit',     cls: 'badge-indigo', icon: '⬆' },
     };
 
     document.getElementById('hist-tbody').innerHTML = histData.length
