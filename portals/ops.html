@@ -1,14 +1,21 @@
 <!DOCTYPE html>
 <!-- ============================================================
      ops.html
-     Version : 1.7
+     Version : 1.9
      Updated : 2026-04-15
-     Changes : Fix OH4 — openDisburseModal() replaced 2 API calls
-               (GET_INVOICE_DETAIL + SIMULATE_FEES) with 1 batch call
-               GET_DISBURSE_INIT. Modal now shows full disbursement
-               breakdown: PO Value, Platform Funded, Gap, Client Reserve,
-               Client Contribution, Total to Disburse, Gap Uncovered.
-               doDisburse() toast uses total_disbursed from response.
+     Changes : Fix OH5 — loadClientInvoicesForPayment() replaced 2 API
+               calls (GET_INVOICES×2) with 1 batch call GET_PAYMENT_INIT.
+               showPayInvoiceDetail() reads from client-side cache
+               (_payInvoiceCache) — 0 API calls on invoice select.
+               Payment tab: 3 API calls → 1.
+               Fix OH6 — refreshDashboard() replaced 5 API calls
+               (GET_PORTFOLIO_SUMMARY + GET_FUND_REQUESTS +
+               GET_PENDING_TRANSACTIONS + GET_INVOICES×2) with existing
+               GET_OPS_DASHBOARD batch route: 5 → 1.
+               Fix OH7 — init() replaced 3 parallel API calls
+               (GET_ALL_CLIENTS + GET_TRANSACTION_TYPES +
+               GET_ALL_SUPPLIERS) with existing GET_OPS_INIT: 3 → 1.
+               Total on page load: was 8 API calls, now 2 (init + dashboard).
      ============================================================ -->
 <html>
 <head>
@@ -592,14 +599,12 @@ async function init() {
   document.getElementById('chg-date').value = today;
 
   try {
-    const [cRes, tRes, sRes] = await Promise.all([
-      API.call('GET_ALL_CLIENTS'),
-      API.call('GET_TRANSACTION_TYPES'),
-      API.call('GET_ALL_SUPPLIERS'),
-    ]);
-    clients   = cRes.clients || [];
-    txTypes   = tRes.types   || [];
-    suppliers = sRes.suppliers || [];
+    // Fix OH7: single GET_OPS_INIT replaces 3 parallel API calls
+    // (GET_ALL_CLIENTS + GET_TRANSACTION_TYPES + GET_ALL_SUPPLIERS)
+    const initRes = await API.call('GET_OPS_INIT');
+    clients   = initRes.clients   || [];
+    txTypes   = initRes.types     || [];
+    suppliers = initRes.suppliers || [];
     populateClientSelects();
     populateTxTypeSelect();
     refreshDashboard();
@@ -639,24 +644,19 @@ function showTab(tab) {
 // ── Dashboard ──────────────────────────────────────────────────
 async function refreshDashboard() {
   try {
-    const [port, frRes, ptRes] = await Promise.all([
-      API.call('GET_PORTFOLIO_SUMMARY'),
-      API.call('GET_FUND_REQUESTS', { status: 'PENDING' }),
-      API.call('GET_PENDING_TRANSACTIONS'),
-    ]);
-    const p = port;
-    document.getElementById('kpi-exposure').textContent = fmt(p.active_exposure);
+    // Fix OH6: single GET_OPS_DASHBOARD replaces 5 API calls
+    // (GET_PORTFOLIO_SUMMARY + GET_FUND_REQUESTS + GET_PENDING_TRANSACTIONS + GET_INVOICES×2)
+    const dash = await API.call('GET_OPS_DASHBOARD');
+    const p = dash.portfolio;
+    document.getElementById('kpi-exposure').textContent     = fmt(p.active_exposure);
     document.getElementById('kpi-exposure-sub').textContent = p.active_count + ' invoices disbursed';
-    document.getElementById('kpi-overdue').textContent = fmt(p.overdue_exposure);
-    document.getElementById('kpi-overdue-sub').textContent = p.overdue_count + ' invoices';
-    document.getElementById('kpi-pending').textContent = p.pending_count;
-    document.getElementById('kpi-company').textContent = fmt(p.company_balance);
+    document.getElementById('kpi-overdue').textContent      = fmt(p.overdue_exposure);
+    document.getElementById('kpi-overdue-sub').textContent  = p.overdue_count + ' invoices';
+    document.getElementById('kpi-pending').textContent      = p.pending_count;
+    document.getElementById('kpi-company').textContent      = fmt(p.company_balance);
 
-    // Pending invoices
-    const invRes = await API.call('GET_INVOICES', { status: 'SUBMITTED' });
-    const pendInvs = [...(invRes.invoices||[])];
-    const pendInv2 = await API.call('GET_INVOICES', { status: 'PENDING_SECOND_APPROVAL' });
-    const allPend  = [...pendInvs, ...(pendInv2.invoices||[])].slice(0,6);
+    // Pending invoices — already filtered SUBMITTED+PENDING_SECOND_APPROVAL server-side
+    const allPend = (dash.pending_invoices || []).slice(0, 6);
     document.getElementById('pending-tbody').innerHTML = allPend.length ? allPend.map(i => `
       <tr>
         <td><span class="text-bold">${i.invoice_ref}</span></td>
@@ -667,7 +667,7 @@ async function refreshDashboard() {
       </tr>`).join('') : '<tr><td colspan="5" class="text-center text-muted" style="padding:16px">No pending invoices</td></tr>';
 
     // Fund requests
-    const frs = (frRes.requests||[]).slice(0,5);
+    const frs = (dash.fund_requests || []).slice(0, 5);
     document.getElementById('fundreq-tbody').innerHTML = frs.length ? frs.map(r => `
       <tr>
         <td>${r.client_name || getClientName(r.client_id)}</td>
@@ -677,7 +677,7 @@ async function refreshDashboard() {
       </tr>`).join('') : '<tr><td colspan="4" class="text-center text-muted" style="padding:16px">No pending requests</td></tr>';
 
     // Pending transactions
-    const ptxns = (ptRes.transactions||[]).slice(0,5);
+    const ptxns = (dash.pending_transactions || []).slice(0, 5);
     renderPendingTxns(ptxns, 'pendtxn-tbody');
   } catch(e) { Toast.error('Dashboard error: ' + e.message); }
 }
@@ -880,14 +880,17 @@ async function doDisburse() {
 }
 
 // ── Payments ───────────────────────────────────────────────────
+// Fix OH5: cache populated by GET_PAYMENT_INIT; showPayInvoiceDetail reads from here — 0 extra API calls
+let _payInvoiceCache = {};
+
 async function loadClientInvoicesForPayment() {
   const clientId = document.getElementById('pay-client').value;
   if (!clientId) return;
-  const [r1, r2] = await Promise.all([
-    API.call('GET_INVOICES', { clientId, status: 'DISBURSED' }),
-    API.call('GET_INVOICES', { clientId, status: 'OVERDUE'   }),
-  ]);
-  const all = [...(r1.invoices||[]), ...(r2.invoices||[])];
+  _payInvoiceCache = {};
+  // Fix OH5: single GET_PAYMENT_INIT replaces GET_INVOICES×2 (DISBURSED+OVERDUE)
+  const res = await API.call('GET_PAYMENT_INIT', { clientId });
+  const all = res.invoices || [];
+  all.forEach(i => { _payInvoiceCache[i.invoice_id] = i; });
   document.getElementById('pay-invoice').innerHTML =
     '<option value="">Select invoice…</option>' +
     all.map(i => `<option value="${i.invoice_id}">${i.invoice_ref} — outstanding: ${fmt(i.outstanding_balance)}</option>`).join('');
@@ -898,8 +901,9 @@ async function showPayInvoiceDetail() {
   const invId = document.getElementById('pay-invoice').value;
   if (!invId) return;
   clearPreview();
-  const res  = await API.call('GET_INVOICE_DETAIL', { invoiceId: invId });
-  const i    = res.invoice;
+  // Fix OH5: read from cache populated by loadClientInvoicesForPayment — no API call
+  const i = _payInvoiceCache[invId];
+  if (!i) return;
   document.getElementById('pay-invoice-card').style.display = 'block';
   document.getElementById('pay-invoice-detail').innerHTML = `
     <div class="grid-2">
@@ -1003,7 +1007,13 @@ async function recordPayment() {
           : ''}`;
     Toast.success('Payment posted successfully');
     clearPreview();
-    showPayInvoiceDetail();
+    // Fix OH5: reload invoice list (refreshes cache); re-select if partially repaid
+    const prevInvoiceId = document.getElementById('pay-invoice').value;
+    await loadClientInvoicesForPayment();
+    if (!res.isFullyRepaid && prevInvoiceId && _payInvoiceCache[prevInvoiceId]) {
+      document.getElementById('pay-invoice').value = prevInvoiceId;
+      showPayInvoiceDetail();
+    }
   } catch(e) {
     document.getElementById('btn-confirm-payment').disabled = false;
     Toast.error(e.message);
