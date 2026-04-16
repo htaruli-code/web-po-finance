@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ============================================================
      admin.html
-     Version : 1.8
+     Version : 1.9
      Updated : 2026-04-15
      Changes : v1.1 - Added version header; cache-busting ?v=1.6
                on all shared asset references.
@@ -1128,31 +1128,57 @@ const PARAM_DEFS = {
     fromParams: (p) => { document.getElementById('p-rate').value = p.rate || ''; },
   },
   BLOCK_RATE: {
-    desc: 'Tiered fee by time blocks. Block 1 covers the first N days; Block 2 covers any additional days.',
+    desc: 'Tiered fee by time blocks. Block 1 covers the first N days; Block 2 covers any additional days beyond that.',
     fields: [
-      { id:'p-block1-rate', label:'Block 1 Rate (%)', type:'number', placeholder:'2.15', hint:'Fee % for the first block period (e.g. first 30 days)', step:'0.001', min:'0' },
-      { id:'p-block-days',  label:'Block 1 Days',     type:'number', placeholder:'30',   hint:'How many days are in Block 1 (e.g. 30)', step:'1', min:'1' },
-      { id:'p-block2-rate', label:'Block 2 Rate (%)', type:'number', placeholder:'0.717',hint:'Fee % per block period beyond Block 1', step:'0.001', min:'0' },
-      { id:'p-derive',      label:'Derive Block 2 rate from Block 1 (divide by 3)', type:'checkbox', hint:'When checked, Block 2 rate = Block 1 rate / 3 automatically' },
+      { id:'p-block1-rate', label:'Block 1 Rate (%)', type:'number', placeholder:'2.15', hint:'Fee % charged for the entire Block 1 period (e.g. 2.15% on financed amount)', step:'0.001', min:'0' },
+      { id:'p-block-days',  label:'Block 1 Days',     type:'number', placeholder:'30',   hint:'How many days Block 1 covers (e.g. 30)', step:'1', min:'1' },
+      { id:'p-block2-rate', label:'Block 2 Rate (%) per 10-day unit', type:'number', placeholder:'0.717', hint:'Fee % per 10-day unit beyond Block 1. Ignored when Derive is checked.', step:'0.001', min:'0' },
+      { id:'p-derive',      label:'Derive Block 2 rate from Block 1 (divide by 3)', type:'checkbox', hint:'Block 2 rate = Block 1 rate / 3 rounded to 3 decimal places. Overrides the Block 2 rate field above.' },
     ],
     toParams: () => {
       const b1El  = document.getElementById('p-block1-rate');
       const bdEl  = document.getElementById('p-block-days');
       const b2El  = document.getElementById('p-block2-rate');
       const derEl = document.getElementById('p-derive');
-      if (!b1El) throw new Error('Parameter fields not rendered — please reopen the modal');
+      if (!b1El) throw new Error('Parameter fields not rendered -- please reopen the modal');
+      const block1Rate    = parseFloat(b1El.value)  || 0;
+      const blockDays     = parseInt(bdEl.value)    || 30;
+      const block2Rate    = parseFloat(b2El.value)  || 0;
+      const deriveFromB1  = derEl.checked;
+      // Build the blocks[] structure the engine expects
       return {
-        block1_rate:        parseFloat(b1El.value)  || 0,
-        block_days:         parseInt(bdEl.value)    || 30,
-        block2_rate:        parseFloat(b2El.value)  || 0,
-        derive_from_block1: derEl.checked,
+        block1_rate:        block1Rate,
+        block_days:         blockDays,
+        block2_rate:        block2Rate,
+        derive_from_block1: deriveFromB1,
+        blocks: [
+          {
+            block_days:        blockDays,
+            rate_pct:          block1Rate,
+            prorate_unit_days: null,   // flat block — whole period charged once
+            min_charge:        true,
+            derive_from_block1: false,
+          },
+          {
+            block_days:        9999,   // open-ended second block
+            rate_pct:          block2Rate,
+            prorate_unit_days: 10,     // per 10-day unit
+            min_charge:        true,
+            derive_from_block1: deriveFromB1,
+          },
+        ],
       };
     },
     fromParams: (p) => {
-      document.getElementById('p-block1-rate').value = p.block1_rate || '';
-      document.getElementById('p-block-days').value  = p.block_days  || 30;
-      document.getElementById('p-block2-rate').value = p.block2_rate || '';
-      document.getElementById('p-derive').checked    = p.derive_from_block1 === true || p.derive_from_block1 === 'true';
+      // Support both new format (has blocks[]) and old flat format
+      const b = (p.blocks && p.blocks[0]) || {};
+      document.getElementById('p-block1-rate').value = p.block1_rate || b.rate_pct || '';
+      document.getElementById('p-block-days').value  = p.block_days  || b.block_days || 30;
+      const b2 = (p.blocks && p.blocks[1]) || {};
+      document.getElementById('p-block2-rate').value = p.block2_rate || b2.rate_pct || '';
+      const derive = p.derive_from_block1 === true || p.derive_from_block1 === 'true'
+        || (b2 && (b2.derive_from_block1 === true || b2.derive_from_block1 === 'true'));
+      document.getElementById('p-derive').checked = derive;
     },
   },
   FACTOR_RATE: {
