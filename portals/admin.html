@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ============================================================
      admin.html
-     Version : 1.9
+     Version : 2.0
      Updated : 2026-04-15
      Changes : v1.1 - Added version header; cache-busting ?v=1.6
                on all shared asset references.
@@ -1118,14 +1118,18 @@ const PARAM_DEFS = {
   DAILY_RATE: {
     desc: 'An interest rate that accrues every day on the outstanding financed amount.',
     fields: [
-      { id:'p-rate', label:'Daily Rate (%)', type:'number', placeholder:'0.05', hint:'e.g. 0.05 means 0.05% per day', step:'0.001', min:'0' },
+      { id:'p-rate', label:'Daily Rate (%)', type:'number', placeholder:'0.05', hint:'e.g. 0.05 means 0.05% per day on the financed amount', step:'0.001', min:'0' },
     ],
     toParams: () => {
       const el = document.getElementById('p-rate');
-      if (!el) throw new Error('Parameter fields not rendered — please reopen the modal');
-      return { rate: parseFloat(el.value) || 0 };
+      if (!el) throw new Error('Parameter fields not rendered -- please reopen the modal');
+      // Fix CE2: engine reads params.daily_rate not params.rate
+      return { daily_rate: parseFloat(el.value) || 0 };
     },
-    fromParams: (p) => { document.getElementById('p-rate').value = p.rate || ''; },
+    fromParams: (p) => {
+      // Support both daily_rate (new) and rate (old saved rules)
+      document.getElementById('p-rate').value = p.daily_rate || p.rate || '';
+    },
   },
   BLOCK_RATE: {
     desc: 'Tiered fee by time blocks. Block 1 covers the first N days; Block 2 covers any additional days beyond that.',
@@ -1343,8 +1347,11 @@ async function runFeeSimulator() {
     return;
   }
   try {
-    const today    = new Date().toISOString().split('T')[0];
-    const repayDate = new Date(Date.now() + days * 86400000).toISOString().split('T')[0];
+    const today     = new Date().toISOString().split('T')[0];
+    // Fix: add days to midnight of today to avoid Math.round rounding up
+    // when Date.now() time-of-day + timezone offset crosses a day boundary
+    const todayMidnight = new Date(today + 'T00:00:00Z');
+    const repayDate = new Date(todayMidnight.getTime() + days * 86400000).toISOString().split('T')[0];
     const res = await API.call('SIMULATE_FEES', {
       clientId: assignedClient.client_id, poValue, advanceRatePct, disbDate: today, repayDate,
     });
