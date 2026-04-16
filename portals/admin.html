@@ -1,9 +1,11 @@
 <!DOCTYPE html>
 <!-- ============================================================
      admin.html
-     Version : 2.2
+     Version : 2.3
      Updated : 2026-04-15
-     Changes : Fix AD1 — loadAllUsers() was stubbed; now calls GET_ALL_USERS
+     Changes : Fix AD3 — loadAllUsers(): getClientName() not defined in admin.html;
+               replaced with inline allClients.find() lookup.
+     Previous: Fix AD1 — loadAllUsers() was stubbed; now calls GET_ALL_USERS
                batch route — renders Platform/Client/Investor tables live.
                Fix AD2 — loadNotifications() was stubbed; now calls
                GET_ALL_NOTIFICATIONS — renders table + KPI counts.
@@ -733,7 +735,7 @@ async function loadAllUsers() {
       ? cu.map(u => `<tr>
           <td>${u.full_name || '—'}</td>
           <td>${u.email}</td>
-          <td style="font-size:11px">${getClientName(u.client_id) || u.client_id}</td>
+          <td style="font-size:11px">${allClients.find(c=>String(c.client_id)===String(u.client_id))?.company_name || u.client_id}</td>
           <td><span class="badge badge-blue">${u.role_name || '—'}</span></td>
           <td>${fmtActive(u.is_active)}</td>
         </tr>`).join('')
