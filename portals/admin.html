@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ============================================================
      admin.html
-     Version : 2.0
+     Version : 2.1
      Updated : 2026-04-15
      Changes : v1.1 - Added version header; cache-busting ?v=1.6
                on all shared asset references.
@@ -1347,13 +1347,14 @@ async function runFeeSimulator() {
     return;
   }
   try {
-    const today     = new Date().toISOString().split('T')[0];
-    // Fix: add days to midnight of today to avoid Math.round rounding up
-    // when Date.now() time-of-day + timezone offset crosses a day boundary
-    const todayMidnight = new Date(today + 'T00:00:00Z');
-    const repayDate = new Date(todayMidnight.getTime() + days * 86400000).toISOString().split('T')[0];
+    // Fix: pass days directly as a fixed date offset to avoid server-side
+    // timezone daysBetween rounding. Use a fixed anchor date (2000-01-01)
+    // so daysBetween on the server computes exactly the days entered.
+    const anchor    = '2000-01-01';
+    const anchorMs  = new Date(anchor + 'T00:00:00Z').getTime();
+    const repayDate = new Date(anchorMs + days * 86400000).toISOString().split('T')[0];
     const res = await API.call('SIMULATE_FEES', {
-      clientId: assignedClient.client_id, poValue, advanceRatePct, disbDate: today, repayDate,
+      clientId: assignedClient.client_id, poValue, advanceRatePct, disbDate: anchor, repayDate,
     });
     const cur = res.currency || 'MYR';
     const fmt = n => cur + ' ' + Number(n||0).toLocaleString('en-MY', {minimumFractionDigits:2, maximumFractionDigits:2});
