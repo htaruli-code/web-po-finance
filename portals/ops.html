@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ============================================================
      ops.html
-     Version : 1.6
+     Version : 1.7
      Updated : 2026-04-15
      Changes : Fix OH4 — openDisburseModal() replaced 2 API calls
                (GET_INVOICE_DETAIL + SIMULATE_FEES) with 1 batch call
@@ -42,7 +42,7 @@ document.addEventListener('DOMContentLoaded', function() {
   <aside class="sidebar">
     <div class="sidebar-logo">
       <h1><span class="platform-name">PO Financing Portal v4</span></h1>
-      <small>Operations Portal</small>
+      <small id="portal-subtitle">Operations Portal</small>
     </div>
     <div style="padding:12px 16px;border-top:1px solid rgba(255,255,255,0.12)">
       <div id="user-badge"></div>
@@ -575,6 +575,18 @@ async function init() {
   OPS_USER = ctx.userId;
   Session.renderUserBadge('user-badge');
   Session.applyPermissions();
+
+  // Fix OH5: show role-aware subtitle instead of hardcoded "Operations Portal"
+  const ROLE_LABELS = {
+    SUPER_ADMIN:  'System Admin',
+    OPS_MANAGER:  'Operations Manager',
+    OPS_ANALYST:  'Operations Analyst',
+    AUDITOR:      'Auditor',
+  };
+  const subtitleEl = document.getElementById('portal-subtitle');
+  if (subtitleEl && ctx.primaryRole) {
+    subtitleEl.textContent = ROLE_LABELS[ctx.primaryRole] || 'Operations Portal';
+  }
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('pay-date').value = today;
   document.getElementById('chg-date').value = today;
