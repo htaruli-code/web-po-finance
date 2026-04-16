@@ -1,10 +1,14 @@
 <!DOCTYPE html>
 <!-- ============================================================
      admin.html
-     Version : 2.1
+     Version : 2.2
      Updated : 2026-04-15
-     Changes : v1.1 - Added version header; cache-busting ?v=1.6
-               on all shared asset references.
+     Changes : Fix AD1 — loadAllUsers() was stubbed; now calls GET_ALL_USERS
+               batch route — renders Platform/Client/Investor tables live.
+               Fix AD2 — loadNotifications() was stubbed; now calls
+               GET_ALL_NOTIFICATIONS — renders table + KPI counts.
+     Previous: v2.1 — Costing Template Manager tab.
+               v1.1 — Version header; cache-busting.
      ============================================================ -->
 <html>
 <head>
@@ -705,13 +709,48 @@ async function loadClients() {
 }
 
 // ── Users ──────────────────────────────────────────────────────
+// Fix AD1: GET_ALL_USERS batch route — reads all 3 user sheets in 1 API call
 async function loadAllUsers() {
-  document.getElementById('users-platform-tbody').innerHTML =
-    '<tr><td colspan="5" class="text-center text-muted" style="padding:16px">User listing — check PlatformUsers sheet directly or add GET_ALL_USERS endpoint</td></tr>';
-  document.getElementById('users-client-tbody').innerHTML =
-    '<tr><td colspan="5" class="text-center text-muted" style="padding:16px">Client users — check ClientUsers sheet</td></tr>';
-  document.getElementById('users-investor-tbody').innerHTML =
-    '<tr><td colspan="5" class="text-center text-muted" style="padding:16px">Investor users — check InvestorUsers sheet</td></tr>';
+  try {
+    const res = await API.call('GET_ALL_USERS');
+    const fmtActive = (v) => (v === true || v === 'TRUE' || v === 1)
+      ? '<span class="badge badge-green">Active</span>'
+      : '<span class="badge badge-red">Inactive</span>';
+
+    const pu = res.platformUsers || [];
+    document.getElementById('users-platform-tbody').innerHTML = pu.length
+      ? pu.map(u => `<tr>
+          <td>${u.full_name || '—'}</td>
+          <td>${u.email}</td>
+          <td><span class="badge badge-blue">${u.role_name || '—'}</span></td>
+          <td>${fmtActive(u.is_active)}</td>
+          <td style="font-size:11px;color:var(--mgray)">${u.last_login_at ? fmtDate(u.last_login_at) : 'Never'}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="5" class="text-center text-muted" style="padding:16px">No platform users found</td></tr>';
+
+    const cu = res.clientUsers || [];
+    document.getElementById('users-client-tbody').innerHTML = cu.length
+      ? cu.map(u => `<tr>
+          <td>${u.full_name || '—'}</td>
+          <td>${u.email}</td>
+          <td style="font-size:11px">${getClientName(u.client_id) || u.client_id}</td>
+          <td><span class="badge badge-blue">${u.role_name || '—'}</span></td>
+          <td>${fmtActive(u.is_active)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="5" class="text-center text-muted" style="padding:16px">No client users found</td></tr>';
+
+    const iu = res.investorUsers || [];
+    document.getElementById('users-investor-tbody').innerHTML = iu.length
+      ? iu.map(u => `<tr>
+          <td>${u.full_name || '—'}</td>
+          <td>${u.email}</td>
+          <td style="font-size:11px">${u.investor_id || '—'}</td>
+          <td><span class="badge badge-blue">${u.role_name || '—'}</span></td>
+          <td>${fmtActive(u.is_active)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="5" class="text-center text-muted" style="padding:16px">No investor users found</td></tr>';
+
+  } catch(e) { Toast.error('Load users failed: ' + e.message); }
 }
 
 function switchUserTab(tab, el) {
@@ -769,15 +808,30 @@ function renderPermMatrix() {
 }
 
 // ── Notifications ──────────────────────────────────────────────
+// Fix AD2: GET_ALL_NOTIFICATIONS — reads live from Notifications sheet
 async function loadNotifications() {
   try {
+    const statusFilter = document.getElementById('notif-status-filter').value;
+    const res = await API.call('GET_ALL_NOTIFICATIONS');
+    const k = res.kpis || {};
     document.getElementById('notif-kpis').innerHTML = `
-      <div class="kpi"><div class="kpi-label">Total Queued</div><div class="kpi-value">—</div></div>
-      <div class="kpi green"><div class="kpi-label">Sent</div><div class="kpi-value">—</div></div>
-      <div class="kpi red"><div class="kpi-label">Failed</div><div class="kpi-value">—</div></div>
-      <div class="kpi amber"><div class="kpi-label">Pending</div><div class="kpi-value">—</div></div>`;
-    document.getElementById('notif-tbody').innerHTML = '<tr><td colspan="6" class="text-center text-muted" style="padding:20px">Notification data in Notifications sheet. Use Process Queue to flush pending emails.</td></tr>';
-  } catch(e) {}
+      <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-value">${k.total||0}</div></div>
+      <div class="kpi green"><div class="kpi-label">Sent</div><div class="kpi-value">${k.sent||0}</div></div>
+      <div class="kpi red"><div class="kpi-label">Failed</div><div class="kpi-value">${k.failed||0}</div></div>
+      <div class="kpi amber"><div class="kpi-label">Pending</div><div class="kpi-value">${k.pending||0}</div></div>`;
+    let rows = res.notifications || [];
+    if (statusFilter) rows = rows.filter(n => n.status === statusFilter);
+    document.getElementById('notif-tbody').innerHTML = rows.length
+      ? rows.map(n => `<tr>
+          <td style="font-size:11px;color:var(--mgray)">${fmtDate(n.created_at)}</td>
+          <td style="font-size:11px">${n.recipient_id}<br><span style="color:var(--mgray)">${n.recipient_type}</span></td>
+          <td style="font-size:11px">${n.type || '—'}</td>
+          <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${n.subject || '—'}</td>
+          <td>${badge(n.status)}</td>
+          <td style="font-size:11px;color:var(--mgray)">${n.sent_at ? fmtDate(n.sent_at) : '—'}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="text-center text-muted" style="padding:20px">No notifications found</td></tr>';
+  } catch(e) { Toast.error('Load notifications failed: ' + e.message); }
 }
 
 async function processQueue() {
