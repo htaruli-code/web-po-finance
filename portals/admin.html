@@ -1,9 +1,11 @@
 <!DOCTYPE html>
 <!-- ============================================================
      admin.html
-     Version : 2.3
+     Version : 2.4
      Updated : 2026-04-15
-     Changes : Fix AD3 — loadAllUsers(): getClientName() not defined in admin.html;
+     Changes : Fix AD4 — Notifications KPI cards (Total/Sent/Failed/Pending) now
+               render horizontally via flex row on container + flex:1 on each card.
+     Previous: Fix AD3 — loadAllUsers(): getClientName() not defined in admin.html;
                replaced with inline allClients.find() lookup.
      Previous: Fix AD1 — loadAllUsers() was stubbed; now calls GET_ALL_USERS
                batch route — renders Platform/Client/Investor tables live.
@@ -251,7 +253,7 @@ document.addEventListener('DOMContentLoaded', function() {
           <button class="btn btn-ghost btn-sm" onclick="processQueue()">▶ Process Queue Now</button>
         </div>
       </div>
-      <div class="kpi-row" id="notif-kpis"></div>
+      <div class="kpi-row" id="notif-kpis" style="display:flex;flex-direction:row;gap:12px;margin-bottom:16px"></div>
       <div class="card mt-16">
         <div class="flex-gap mb-12">
           <select id="notif-status-filter" class="form-control" style="width:160px" onchange="loadNotifications()">
@@ -817,10 +819,10 @@ async function loadNotifications() {
     const res = await API.call('GET_ALL_NOTIFICATIONS');
     const k = res.kpis || {};
     document.getElementById('notif-kpis').innerHTML = `
-      <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-value">${k.total||0}</div></div>
-      <div class="kpi green"><div class="kpi-label">Sent</div><div class="kpi-value">${k.sent||0}</div></div>
-      <div class="kpi red"><div class="kpi-label">Failed</div><div class="kpi-value">${k.failed||0}</div></div>
-      <div class="kpi amber"><div class="kpi-label">Pending</div><div class="kpi-value">${k.pending||0}</div></div>`;
+      <div class="kpi" style="flex:1"><div class="kpi-label">Total</div><div class="kpi-value">${k.total||0}</div></div>
+      <div class="kpi green" style="flex:1"><div class="kpi-label">Sent</div><div class="kpi-value">${k.sent||0}</div></div>
+      <div class="kpi red" style="flex:1"><div class="kpi-label">Failed</div><div class="kpi-value">${k.failed||0}</div></div>
+      <div class="kpi amber" style="flex:1"><div class="kpi-label">Pending</div><div class="kpi-value">${k.pending||0}</div></div>`;
     let rows = res.notifications || [];
     if (statusFilter) rows = rows.filter(n => n.status === statusFilter);
     document.getElementById('notif-tbody').innerHTML = rows.length
