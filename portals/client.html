@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ============================================================
      client.html
-     Version : 2.4
+     Version : 2.5
      Updated : 2026-04-15
      Changes :
        v2.1 -- Fix CH8: refreshOverview() switched to single GET_CLIENT_INIT
@@ -14,6 +14,11 @@
        v2.4 -- Fix CH11: RESERVE_DEPOSIT txn_type added to TYPE_META and
                filter dropdown. Reserve deposits now appear in Transaction
                History with correct label, badge colour, and Running Balance.
+       v2.5 -- Fix CH12: loadReserveHistory() now uses GET_RESERVE_INIT
+               (1 API call always). Old code: GET_RESERVE_HISTORY +
+               conditional GET_CLIENT_FINANCIAL_SUMMARY when cache cold =
+               up to 2 calls. New: single batch call returns both history
+               and summary; _clientSummaryCache populated from response.
      ============================================================ -->
 <html>
 <head>
@@ -997,32 +1002,28 @@ function exportHistory() {
 // ── Reserve ──────────────────────────────────────────────────────
 
 /**
- * Fix CH4: loadReserveHistory() was making 2 API calls:
- *   GET_RESERVE_HISTORY + GET_CLIENT_FINANCIAL_SUMMARY (redundant after init).
- * Now: GET_RESERVE_HISTORY only (1 call). Summary KPIs read from
- * _clientSummaryCache populated by refreshOverview() via GET_CLIENT_INIT.
- * If cache is empty (reserve tab opened before overview), falls back to
- * a single GET_CLIENT_FINANCIAL_SUMMARY call.
+ * Fix CH12: loadReserveHistory() uses GET_RESERVE_INIT — 1 API call always.
+ *
+ * Old (v2.4): GET_RESERVE_HISTORY (1 call) + conditional GET_CLIENT_FINANCIAL_SUMMARY
+ * when _clientSummaryCache was cold (reserve tab opened before overview tab) = 2 calls.
+ *
+ * New: single GET_RESERVE_INIT returns { summary, history } in 1 GAS execution.
+ * _clientSummaryCache populated from response so subsequent tabs need 0 extra calls.
  */
 async function loadReserveHistory() {
   if (!CLIENT_ID) return;
   try {
-    // Only 1 API call — reserve history rows
-    const rsvRes = await API.call('GET_RESERVE_HISTORY', { clientId: CLIENT_ID });
-
-    // Use cached summary if available; fetch only if cache is empty
-    let s = _clientSummaryCache;
-    if (!s) {
-      s = await API.call('GET_CLIENT_FINANCIAL_SUMMARY', { clientId: CLIENT_ID });
-      _clientSummaryCache = s;
-    }
+    const res = await API.call('GET_RESERVE_INIT', { clientId: CLIENT_ID });
+    const s   = res.summary;
+    // Populate cache so overview/submit tabs don't need a separate call
+    if (s) _clientSummaryCache = s;
 
     document.getElementById('rsv-balance').textContent = fmt(s.reserve_balance);
     document.getElementById('rsv-limit').textContent   = fmt(s.credit_limit);
     document.getElementById('rsv-net').textContent     = fmt(s.net_available || (s.available_limit + s.reserve_balance));
     document.getElementById('fr-max-hint').textContent = 'Max: ' + fmt(s.reserve_balance);
 
-    const rows = rsvRes.history || [];
+    const rows = res.history || [];
     document.getElementById('rsv-history-tbody').innerHTML = rows.length
       ? rows.map(r => `
           <tr>
