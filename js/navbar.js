@@ -1,14 +1,12 @@
 // ============================================================
 // navbar.js
-// Version : 2.4
+// Version : 2.5
 // Updated : 2026-04-03
 // Changes :
 //   v1.8 — Fix N2: auth gate OPT-IN via POF_REQUIRE_AUTH.
 //   v1.9 — Fix N3: hide documentElement synchronously (had race bug).
 //   v2.0 — Fix N4: logout() reveals documentElement before navigating.
-//   v2.4 — Debug: console.log traces added to Session.load() so the
-//           exact GET_SESSION_CONTEXT response and POF_CONFIG state
-//           can be inspected in browser DevTools console.
+//   v2.5 — Removed debug console.log traces from Session.load().
 //   v2.3 — Fix N7: platform settings (currency/timezone/name) must NOT
 //           be read from sessionStorage cache — they change independently
 //           of the session. Session.load() now always fetches
@@ -179,9 +177,6 @@ const Session = {
     // from sessionStorage as a shortcut that skips the fresh fetch.
     try {
       const ctx = await API.call('GET_SESSION_CONTEXT', {});
-      console.log('[POF v2.4] GET_SESSION_CONTEXT response:', JSON.stringify(ctx));
-      console.log('[POF v2.4] ctx.platform:', ctx.platform);
-      console.log('[POF v2.4] POF_CONFIG.CURRENCY before:', window.POF_CONFIG && window.POF_CONFIG.CURRENCY);
       if (!ctx.valid) { this.logout(); return null; }
       this._ctx = ctx;
       sessionStorage.setItem('pof_ctx', JSON.stringify(ctx));
@@ -191,13 +186,9 @@ const Session = {
         if (ctx.platform.timezone)      window.POF_CONFIG.TIMEZONE      = ctx.platform.timezone;
         if (ctx.platform.platform_name) window.POF_CONFIG.PLATFORM_NAME = ctx.platform.platform_name;
         if (ctx.platform.date_format)   window.POF_CONFIG.DATE_FORMAT   = ctx.platform.date_format;
-        console.log('[POF v2.4] POF_CONFIG.CURRENCY after:', window.POF_CONFIG.CURRENCY);
-      } else {
-        console.warn('[POF v2.4] ctx.platform missing or POF_CONFIG missing. ctx.platform=', ctx.platform, 'POF_CONFIG=', window.POF_CONFIG);
       }
       return ctx;
     } catch(e) {
-      console.error('[POF v2.4] Session.load error:', e.message);
       if (e.message === 'Session expired' || e.message === 'SESSION_EXPIRED') {
         this.logout();
       }
