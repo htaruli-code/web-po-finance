@@ -1,11 +1,16 @@
 // ============================================================
 // navbar.js
-// Version : 2.1
+// Version : 2.2
 // Updated : 2026-04-03
 // Changes :
 //   v1.8 — Fix N2: auth gate OPT-IN via POF_REQUIRE_AUTH.
 //   v1.9 — Fix N3: hide documentElement synchronously (had race bug).
 //   v2.0 — Fix N4: logout() reveals documentElement before navigating.
+//   v2.2 — Fix N6: Session.load() now writes ctx.platform values
+//           (currency, timezone, platform_name) to window.POF_CONFIG
+//           after GET_SESSION_CONTEXT resolves. This overrides the
+//           hardcoded config.js defaults so fmt() always uses the
+//           live setting from the spreadsheet.
 //   v2.1 — Fix N5: removed documentElement visibility hide entirely.
 //           If navbar.js fails to load or execute for any reason
 //           (network error, cached stale file, CDN issue), the hide
@@ -153,8 +158,21 @@ const Session = {
     const cached = sessionStorage.getItem('pof_ctx');
     if (cached) {
       this._ctx = JSON.parse(cached);
-      // Body was hidden by early gate — reveal it now
-      return this._ctx;
+      // Fix N6: apply live platform settings from cached ctx.
+      // If platform{} is missing (old cache from before v2.2), fall through
+      // to re-fetch GET_SESSION_CONTEXT so platform{} gets populated.
+      if (this._ctx.platform) {
+        if (window.POF_CONFIG) {
+          if (this._ctx.platform.currency)      window.POF_CONFIG.CURRENCY      = this._ctx.platform.currency;
+          if (this._ctx.platform.timezone)      window.POF_CONFIG.TIMEZONE      = this._ctx.platform.timezone;
+          if (this._ctx.platform.platform_name) window.POF_CONFIG.PLATFORM_NAME = this._ctx.platform.platform_name;
+          if (this._ctx.platform.date_format)   window.POF_CONFIG.DATE_FORMAT   = this._ctx.platform.date_format;
+        }
+        return this._ctx;
+      }
+      // Old cache without platform{} — clear and re-fetch below
+      sessionStorage.removeItem('pof_ctx');
+      this._ctx = null;
     }
     // Token was already harvested from hash by _earlyAuthGate() before
     // DOMContentLoaded, so sessionStorage is always populated here if
@@ -169,6 +187,15 @@ const Session = {
       if (!ctx.valid) { this.logout(); return null; }
       this._ctx = ctx;
       sessionStorage.setItem('pof_ctx', JSON.stringify(ctx));
+      // Fix N6: override static config.js defaults with live platform settings
+      // so fmt() currency, fmtDate() locale and platform-name labels are always
+      // in sync with whatever the admin last saved in Platform Settings.
+      if (ctx.platform && window.POF_CONFIG) {
+        if (ctx.platform.currency)      window.POF_CONFIG.CURRENCY      = ctx.platform.currency;
+        if (ctx.platform.timezone)      window.POF_CONFIG.TIMEZONE      = ctx.platform.timezone;
+        if (ctx.platform.platform_name) window.POF_CONFIG.PLATFORM_NAME = ctx.platform.platform_name;
+        if (ctx.platform.date_format)   window.POF_CONFIG.DATE_FORMAT   = ctx.platform.date_format;
+      }
       // Auth confirmed — reveal the page body
       return ctx;
     } catch(e) {
