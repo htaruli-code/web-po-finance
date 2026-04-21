@@ -1,16 +1,10 @@
 <!DOCTYPE html>
 <!-- ============================================================
      investor.html
-     Version : 1.6
-     Updated : 2026-04-15
+     Version : 1.7
+     Updated : 2026-04-03
      Changes : v1.1 - Added version header; cache-busting ?v=1.6
                on all shared asset references.
-               v1.6 - Fix INV1: loadPortfolio() replaced 2 POST calls
-               (GET_INVESTOR_PORTFOLIO + GET_CLIENT_BALANCE) with
-               1 GET call (GET_INVESTOR_INIT). POST violates GAS
-               302-redirect rule. Uses API.call() from navbar.js
-               (GET + URLSearchParams). Balance rows now come from
-               INVESTOR_BALANCE sheet (not CLIENT_BALANCE).
      ============================================================ -->
 <html>
 <head>
@@ -21,7 +15,7 @@
   <!-- Fix N2: opt-in to auth gate -->
   <script>window.POF_REQUIRE_AUTH = true;</script>
   <script src="/js/config.js?v=1.8"></script>
-  <script src="/js/navbar.js?v=1.8"></script>
+  <script src="/js/navbar.js?v=2.3"></script>
 </head>
 <body>
 <script>
@@ -113,18 +107,19 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <script>
-// Fix INV1: use API.call() from navbar.js (GET + URLSearchParams, not POST)
-// v1.6
+
+const post = (action,params) => fetch(API,{method:'POST',body:JSON.stringify({action,params})}).then(r=>r.json());
 const fmtM = n => 'MYR ' + Number(n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2});
 
 async function loadPortfolio() {
   const investorId = document.getElementById('inv-selector').value;
 
-  // Fix INV1: was 2 POST calls (GET_INVESTOR_PORTFOLIO + GET_CLIENT_BALANCE).
-  // GET_INVESTOR_INIT wraps both in 1 GET execution.
-  const res = await API.call('GET_INVESTOR_INIT', { investorId });
-  const p   = res.portfolio || {};
+  const [portfolioRes, balRes] = await Promise.all([
+    post('GET_INVESTOR_PORTFOLIO', { investorId }),
+    post('GET_CLIENT_BALANCE', { clientId: '__investor__' }).catch(() => ({ history: [] })),
+  ]);
 
+  const p = portfolioRes;
   if (!p || !p.investor_name) {
     document.getElementById('kpi-committed').textContent = 'No data';
     return;
@@ -145,8 +140,8 @@ async function loadPortfolio() {
   document.getElementById('s-fee').textContent       = fmtM(p.fee_income);
   document.getElementById('s-roi').textContent       = (p.roi_pct||0).toFixed(2) + '%';
 
-  // Balance ledger — from INVESTOR_BALANCE rows returned by GET_INVESTOR_INIT
-  const balRows = (res.balance_history || []).slice(-10).reverse();
+  // Balance ledger (investor balance)
+  const balRows = (balRes.history || []).slice(-10).reverse();
   document.getElementById('balance-tbody').innerHTML = balRows.length ?
     balRows.map(h => `
       <tr>

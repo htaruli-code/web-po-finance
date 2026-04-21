@@ -1,17 +1,10 @@
 <!DOCTYPE html>
 <!-- ============================================================
      capital.html
-     Version : 1.6
-     Updated : 2026-04-15
+     Version : 1.7
+     Updated : 2026-04-03
      Changes : v1.1 - Added version header; cache-busting ?v=1.6
                on all shared asset references.
-               v1.6 - Fix CAP1: loadAll() replaced 2 POST calls
-               (GET_WATERFALL_STATUS + GET_ALL_INVESTOR_BALANCES)
-               with 1 GET call (GET_CAPITAL_INIT). POST violates
-               GAS 302-redirect rule. GET_ALL_INVESTOR_BALANCES was
-               redundant — getWaterfallStatus() already calls
-               getAllInvestorBalanceSummary() internally.
-               Now uses API.call() from navbar.js (GET + URLSearchParams).
      ============================================================ -->
 <html>
 <head>
@@ -22,7 +15,7 @@
   <!-- Fix N2: opt-in to auth gate -->
   <script>window.POF_REQUIRE_AUTH = true;</script>
   <script src="/js/config.js?v=1.8"></script>
-  <script src="/js/navbar.js?v=1.8"></script>
+  <script src="/js/navbar.js?v=2.3"></script>
 </head>
 <body>
 <script>
@@ -91,17 +84,16 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <script>
-// Fix CAP1: use API.call() from navbar.js (GET + URLSearchParams, not POST)
-// v1.6
+
+const post = (action, params) => fetch(API,{method:'POST',body:JSON.stringify({action,params})}).then(r=>r.json());
 const fmtM = n => 'MYR ' + Number(n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2});
 const pct  = n => Number(n||0).toFixed(1) + '%';
 
 async function loadAll() {
-  // Fix CAP1: was 2 POST calls (GET_WATERFALL_STATUS + GET_ALL_INVESTOR_BALANCES).
-  // GET_CAPITAL_INIT wraps both in 1 GET execution.
-  const res = await API.call('GET_CAPITAL_INIT', {});
-  const wf  = res;
-  const inv = { investors: res.investors || [] };
+  const [wf, inv] = await Promise.all([
+    post('GET_WATERFALL_STATUS',{}),
+    post('GET_ALL_INVESTOR_BALANCES',{}),
+  ]);
 
   document.getElementById('l1-bal').textContent = fmtM(wf.company_balance);
   document.getElementById('l2-bal').textContent = fmtM(wf.investor_pool_available);
@@ -125,21 +117,21 @@ async function loadAll() {
       <span><span style="color:#E67E22">■</span> Layer 3: Funders</span>
     </div>`;
 
-  // Investor table — from investors[] in GET_CAPITAL_INIT response
+  // Investor table
   const invPortfolios = inv.investors || [];
-  document.getElementById('investor-tbody').innerHTML = invPortfolios.map(p => `
+  document.getElementById('investor-tbody').innerHTML = invPortfolios.map((p,i) => `
     <tr>
       <td><strong>${p.investor_name}</strong></td>
       <td class="mono">${fmtM(p.committed_capital)}</td>
       <td class="mono">${fmtM(p.called_capital)}</td>
       <td class="mono text-green"><strong>${fmtM(p.uncalled_capital)}</strong></td>
-      <td class="mono">—</td>
-      <td class="mono">—</td>
+      <td class="mono">${pct(wf.investors && wf.investors[i] ? 0 : 0)}</td>
+      <td class="mono"></td>
       <td class="mono">${fmtM(p.running_balance)}</td>
     </tr>`).join('');
 
   // Funder table
-  document.getElementById('funder-tbody').innerHTML = (wf.funder_summary||[]).map(f => `
+  document.getElementById('funder-tbody').innerHTML = (wf.funders||[]).map(f => `
     <tr>
       <td><strong>${f.funder_name}</strong></td>
       <td><span class="badge badge-method">${f.facility_type}</span></td>
@@ -159,9 +151,9 @@ async function loadAll() {
 
 async function simulateWaterfall() {
   const amount = +document.getElementById('sim-amount').value;
-  const res = await API.call('SIMULATE_FEES', {clientId:'CLT-001',poValue:amount/0.8,advanceRatePct:80,
-    disbDate:'2000-01-01',
-    repayDate:'2000-03-01'});
+  const res = await post('SIMULATE_FEES',{clientId:'CLT-001',poValue:amount/0.8,advanceRatePct:80,
+    disbDate:new Date().toISOString().split('T')[0],
+    repayDate:new Date(Date.now()+48*86400000).toISOString().split('T')[0]});
   const wp = res.waterfall_preview || {};
   document.getElementById('waterfall-result').innerHTML = `
     <div style="margin-top:12px">
