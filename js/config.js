@@ -1,8 +1,12 @@
 // ============================================================
 // config.js
-// Version : 1.1
+// Version : 1.2
 // Updated : 2026-04-03
 // Changes :
+//   v1.2 — Fix C1: const POF_CONFIG replaced with window.POF_CONFIG
+//          assignment. const is block-scoped in strict/module context
+//          so window.POF_CONFIG was undefined in navbar.js, causing
+//          the platform currency override to silently do nothing.
 //   v1.1 — Removed non-ASCII characters; added version header.
 //          WEB_APP_URL, ROUTES, and PLATFORM_NAME are the only
 //          values that need editing per deployment.
@@ -12,7 +16,7 @@
 // Only file that needs editing for each deployment.
 // ============================================================
 
-const POF_CONFIG = {
+window.POF_CONFIG = {
 
   // ── Backend URL ────────────────────────────────────────────
   WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbwB8LVdpQPd3vCfTwXC9XdswR4xS0W7fk9wFUSO4MXNIPO3_8-FKJhVyUvvKXhuFnjEmA/exec',
