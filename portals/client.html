@@ -1,9 +1,15 @@
 <!DOCTYPE html>
 <!-- ============================================================
      client.html
-     Version : 2.5
+     Version : 2.6
      Updated : 2026-04-15
      Changes :
+       v2.6 -- Fix CH14: buildCostBreakdown() amount detection for old
+               ADJUSTMENT rows (written before TE2) that have other_fee=0
+               and fee_part=0. Now falls back to notes field for label and
+               shows row even with zero amount pending backfill.
+               Also fixes repayment history showing ADJUSTMENT rows as
+               "+MYR 0.00" — they now show as charges with correct label.
        v2.5 -- Fix CH13: buildCostBreakdown() now renders invoice-linked
                adjustment charges (payment_method=ADJUSTMENT) in both the
                Cost Breakdown section and the Repayment Schedule. Adjustments
@@ -452,7 +458,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <script>
 // ============================================================
 // client.html (inline script)
-// Version : 2.5
+// Version : 2.6
 // Updated : 2026-04-15
 // Changes :
 //   Fix CH1 -- init(): CLIENT users skip GET_ALL_CLIENTS, use ctx.clientId.
@@ -715,13 +721,28 @@ function renderInvoiceDetail(res) {
       <table>
         <thead><tr><th>Date</th><th class="text-right">Amount</th><th>Method</th><th>Reference</th></tr></thead>
         <tbody>
-          ${rp.map(r => `
-          <tr>
-            <td>${fmtDate(r.payment_date||r.created_at)}</td>
-            <td class="amount text-right text-green">+${fmt(r.gross_amount||r.amount)}</td>
-            <td>${r.payment_method||'—'}</td>
-            <td style="font-size:11px;color:var(--mgray)">${r.reference_no||'—'}</td>
-          </tr>`).join('')}
+          // Fix CH14: show ADJUSTMENT rows as charges, not payments
+          ${rp.map(r => {
+            const isAdj    = r.payment_method === 'ADJUSTMENT';
+            const debitAmt = Number(r.other_fee || r.fee_part || 0);
+            const creditAmt= Number(r.gross_amount || r.total_applied || 0);
+            const adjAmt   = debitAmt > 0 ? debitAmt : creditAmt;
+            const adjIsDebit = debitAmt > 0 || (debitAmt === 0 && creditAmt === 0);
+            const amtHtml  = isAdj
+              ? (adjAmt > 0
+                  ? `<span class="amount text-right" style="color:${adjIsDebit?'var(--red)':'var(--green)'}">${adjIsDebit?'+':'−'}${fmt(adjAmt)}</span>`
+                  : `<span style="font-size:11px;color:var(--mgray)">pending backfill</span>`)
+              : `<span class="amount text-right text-green">+${fmt(r.gross_amount||r.amount)}</span>`;
+            const label = isAdj
+              ? ((r.notes||'').replace('[backfill TE2b]','').replace('[backfill TE2c]','').trim() || r.reference_no || 'Adjustment')
+              : (r.reference_no||'—');
+            return `<tr>
+              <td>${fmtDate(r.payment_date||r.created_at)}</td>
+              <td>${amtHtml}</td>
+              <td>${r.payment_method||'—'}</td>
+              <td style="font-size:11px;color:var(--mgray)">${label}</td>
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
     </div>` : ''}
@@ -789,12 +810,16 @@ function buildCostBreakdown(inv, feeLines, repayments, cur) {
   let adjHtml = '';
   if (adjRows.length) {
     let adjItems = '';
+    // Fix CH14: detect debit vs credit and extract amount from available fields.
+    // Old rows (pre-TE2) have other_fee=fee_part=gross_amount=0 — show label only until backfill runs.
     adjRows.forEach(r => {
-      const isDebit  = Number(r.other_fee || r.fee_part || 0) > 0;
-      const amt      = isDebit
-        ? Number(r.other_fee || r.fee_part || 0)
-        : Number(r.gross_amount || r.total_applied || 0);
-      const label    = r.notes || r.reference_no || 'Adjustment';
+      const debitAmt  = Number(r.other_fee || r.fee_part || 0);
+      const creditAmt = Number(r.gross_amount || r.total_applied || 0);
+      const isDebit   = debitAmt > 0 || (debitAmt === 0 && creditAmt === 0);  // default debit if all zero
+      const amt       = isDebit ? debitAmt : creditAmt;
+      const label     = (r.notes || '').replace('[backfill TE2b]','').replace('[backfill TE2c]','').trim()
+                        || r.reference_no || 'Adjustment';
+      const amtDisplay = amt > 0 ? `${isDebit?'+':'−'}${cur} ${fmtN(amt)}` : `<span style="color:var(--mgray);font-size:11px">pending backfill</span>`;
       adjItems += `
         <div class="block-row">
           <div>
@@ -802,7 +827,7 @@ function buildCostBreakdown(inv, feeLines, repayments, cur) {
             <div class="block-calc">${fmtDate(r.payment_date||r.created_at)}</div>
           </div>
           <span class="block-type-tag" style="${isDebit?'background:#FDE8E8;color:#C0392B':'background:#E8F8F0;color:#1A7A4A'}">${isDebit?'Charge':'Credit'}</span>
-          <div class="block-fee" style="color:${isDebit?'var(--red)':'var(--green)'}">${isDebit?'+':'−'}${cur} ${fmtN(amt)}</div>
+          <div class="block-fee" style="color:${isDebit?'var(--red)':'var(--green)'}">${amtDisplay}</div>
         </div>`;
     });
     adjHtml = `
