@@ -1,11 +1,19 @@
 // ============================================================
 // navbar.js
-// Version : 2.2
+// Version : 2.3
 // Updated : 2026-04-03
 // Changes :
 //   v1.8 — Fix N2: auth gate OPT-IN via POF_REQUIRE_AUTH.
 //   v1.9 — Fix N3: hide documentElement synchronously (had race bug).
 //   v2.0 — Fix N4: logout() reveals documentElement before navigating.
+//   v2.3 — Fix N7: platform settings (currency/timezone/name) must NOT
+//           be read from sessionStorage cache — they change independently
+//           of the session. Session.load() now always fetches
+//           GET_SESSION_CONTEXT fresh to get current platform settings,
+//           even when pof_ctx cache is valid. pof_ctx is still used for
+//           user identity and permissions (stable per session).
+//           fmt() locale changed from en-MY to en (neutral) so USD/AUD
+//           format correctly, not with Malaysian locale conventions.
 //   v2.2 — Fix N6: Session.load() now writes ctx.platform values
 //           (currency, timezone, platform_name) to window.POF_CONFIG
 //           after GET_SESSION_CONTEXT resolves. This overrides the
@@ -155,56 +163,33 @@ const Session = {
 
   async load() {
     if (this._ctx) return this._ctx;
-    const cached = sessionStorage.getItem('pof_ctx');
-    if (cached) {
-      this._ctx = JSON.parse(cached);
-      // Fix N6: apply live platform settings from cached ctx.
-      // If platform{} is missing (old cache from before v2.2), fall through
-      // to re-fetch GET_SESSION_CONTEXT so platform{} gets populated.
-      if (this._ctx.platform) {
-        if (window.POF_CONFIG) {
-          if (this._ctx.platform.currency)      window.POF_CONFIG.CURRENCY      = this._ctx.platform.currency;
-          if (this._ctx.platform.timezone)      window.POF_CONFIG.TIMEZONE      = this._ctx.platform.timezone;
-          if (this._ctx.platform.platform_name) window.POF_CONFIG.PLATFORM_NAME = this._ctx.platform.platform_name;
-          if (this._ctx.platform.date_format)   window.POF_CONFIG.DATE_FORMAT   = this._ctx.platform.date_format;
-        }
-        return this._ctx;
-      }
-      // Old cache without platform{} — clear and re-fetch below
-      sessionStorage.removeItem('pof_ctx');
-      this._ctx = null;
-    }
-    // Token was already harvested from hash by _earlyAuthGate() before
-    // DOMContentLoaded, so sessionStorage is always populated here if
-    // the user arrived via a post-login redirect.
     const token = sessionStorage.getItem('pof_token');
     const loginPage = (window.POF_CONFIG && window.POF_CONFIG.ROUTES)
       ? window.POF_CONFIG.ROUTES.login : '/index.html';
     if (!token) { window.location.href = loginPage; return null; }
     API.token = token;
+    // Fix N7: always call GET_SESSION_CONTEXT on every page load so platform
+    // settings (currency, timezone, name) are always current. Platform settings
+    // change independently of the session — caching them in pof_ctx means a
+    // currency change by admin is invisible until the user re-logs in.
+    // pof_ctx is kept only as an in-memory reference; we no longer restore it
+    // from sessionStorage as a shortcut that skips the fresh fetch.
     try {
       const ctx = await API.call('GET_SESSION_CONTEXT', {});
       if (!ctx.valid) { this.logout(); return null; }
       this._ctx = ctx;
       sessionStorage.setItem('pof_ctx', JSON.stringify(ctx));
-      // Fix N6: override static config.js defaults with live platform settings
-      // so fmt() currency, fmtDate() locale and platform-name labels are always
-      // in sync with whatever the admin last saved in Platform Settings.
+      // Apply live platform settings to POF_CONFIG immediately
       if (ctx.platform && window.POF_CONFIG) {
         if (ctx.platform.currency)      window.POF_CONFIG.CURRENCY      = ctx.platform.currency;
         if (ctx.platform.timezone)      window.POF_CONFIG.TIMEZONE      = ctx.platform.timezone;
         if (ctx.platform.platform_name) window.POF_CONFIG.PLATFORM_NAME = ctx.platform.platform_name;
         if (ctx.platform.date_format)   window.POF_CONFIG.DATE_FORMAT   = ctx.platform.date_format;
       }
-      // Auth confirmed — reveal the page body
       return ctx;
     } catch(e) {
-      // Only force logout if session is definitively expired.
-      // Other errors (network blip, permission error) must not log the user out.
       if (e.message === 'Session expired' || e.message === 'SESSION_EXPIRED') {
         this.logout();
-      } else {
-        // Still reveal body — user is likely authenticated, just had a network hiccup
       }
       return null;
     }
@@ -296,12 +281,12 @@ const Toast = {
 // ── Formatters ────────────────────────────────────────────────
 function fmt(n, cur) {
   const c = cur || (window.POF_CONFIG && window.POF_CONFIG.CURRENCY) || 'MYR';
-  return c + ' ' + Number(n || 0).toLocaleString('en-MY', {
+  return c + ' ' + Number(n || 0).toLocaleString('en', {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   });
 }
 function fmtN(n) {
-  return Number(n || 0).toLocaleString('en-MY', {
+  return Number(n || 0).toLocaleString('en', {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   });
 }
