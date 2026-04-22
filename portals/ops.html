@@ -1,9 +1,12 @@
 <!DOCTYPE html>
 <!-- ============================================================
      ops.html
-     Version : 2.0
+     Version : 2.1
      Updated : 2026-04-15
-     Changes : Fix OH5 — loadClientInvoicesForPayment() replaced 2 API
+     Changes : Fix OH8 — Client Management tab added. Lists all clients
+               with credit limit and utilisation. Inline Edit modal updates
+               credit limit via UPDATE_CLIENT_LIMIT (1 API call, audit logged).
+     Previous: Fix OH5 — loadClientInvoicesForPayment() replaced 2 API
                calls (GET_INVOICES×2) with 1 batch call GET_PAYMENT_INIT.
                showPayInvoiceDetail() reads from client-side cache
                (_payInvoiceCache) — 0 API calls on invoice select.
@@ -79,6 +82,10 @@ document.addEventListener('DOMContentLoaded', function() {
       <button class="nav-link" onclick="showTab('aging')">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="2"/></svg>
         <span class="nav-label">Aging Report</span>
+      </button>
+      <button class="nav-link" onclick="showTab('clients')">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" stroke-width="2"/></svg>
+        <span class="nav-label">Clients</span>
       </button>
     </div>
     <div class="sidebar-section">
@@ -639,6 +646,7 @@ function showTab(tab) {
   if (tab === 'fundrequests') loadFundRequests();
   if (tab === 'aging')        loadAging();
   if (tab === 'payments')     populateClientSelects();
+  if (tab === 'clients')      loadOpsClients();
 }
 
 // ── Dashboard ──────────────────────────────────────────────────
@@ -1285,6 +1293,113 @@ function renderPendingTxns(txns, tbodyId) {
         <button class="btn btn-success btn-sm" onclick="approveTxn('${t.txn_id}')">Approve</button>
       </td>
     </tr>`).join('') : '<tr><td colspan="6" class="text-center text-muted" style="padding:16px">None pending</td></tr>';
+}
+
+
+
+    <!-- ═══════════════════════════════════════════
+         TAB: CLIENTS
+    ═══════════════════════════════════════════ -->
+    <div id="tab-clients" class="hidden">
+      <div class="topbar">
+        <h1>Client Management</h1>
+        <button class="btn btn-ghost btn-sm" onclick="loadOpsClients()">↻ Refresh</button>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>KYC</th>
+                <th class="text-right">Credit Limit</th>
+                <th class="text-right">Active Exposure</th>
+                <th class="text-right">Utilisation</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="ops-clients-tbody"><tr class="loading-row"><td colspan="6">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Edit Credit Limit -->
+    <div id="modal-ops-credit-limit" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-ops-credit-limit')">
+      <div class="modal" style="max-width:420px">
+        <div class="modal-header">
+          <span class="modal-title">Edit Credit Limit</span>
+          <button class="modal-close" onclick="closeModal('modal-ops-credit-limit')">✕</button>
+        </div>
+        <div style="padding:20px">
+          <div id="ops-limit-client-name" style="font-weight:700;font-size:14px;margin-bottom:4px"></div>
+          <div style="font-size:12px;color:var(--mgray);margin-bottom:16px">
+            Current: <span id="ops-limit-current" class="text-bold"></span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">New Credit Limit (<span class="platform-currency">MYR</span>)</label>
+            <input type="number" id="ops-limit-input" class="form-control" placeholder="0.00" step="0.01" min="0">
+            <div class="form-hint">Old value will be recorded in Audit Log before saving.</div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:16px">
+            <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-ops-credit-limit')">Cancel</button>
+            <button class="btn btn-primary" style="flex:1" onclick="saveOpsClientLimit()">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+// ── Client Management ─────────────────────────────────────────
+let _opsEditClientId = null;
+
+async function loadOpsClients() {
+  document.getElementById('ops-clients-tbody').innerHTML =
+    '<tr class="loading-row"><td colspan="6">Loading…</td></tr>';
+  try {
+    const res = await API.call('GET_ALL_CLIENTS');
+    clients = res.clients || [];
+    populateClientSelects();
+    const kycMap = { APPROVED:'badge-green', PENDING:'badge-amber', REJECTED:'badge-red', EXEMPT:'badge-teal' };
+    document.getElementById('ops-clients-tbody').innerHTML = clients.length
+      ? clients.map(c => {
+          const limit   = Number(c.credit_limit) || 0;
+          const exposure = Number(c.current_exposure || 0);
+          const utilPct  = limit > 0 ? Math.min(100, (exposure / limit) * 100) : 0;
+          return `<tr>
+            <td><div class="text-bold">${c.company_name}</div><div style="font-size:11px;color:var(--mgray)">${c.client_id}</div></td>
+            <td><span class="badge ${kycMap[c.kyc_status] || 'badge-gray'}">${c.kyc_status || '—'}</span></td>
+            <td class="amount text-right text-bold">${fmt(limit)}</td>
+            <td class="amount text-right">${fmt(exposure)}</td>
+            <td class="text-right" style="font-size:12px">
+              <span style="color:${utilPct>85?'var(--red)':utilPct>60?'var(--amber)':'var(--green)'}">${utilPct.toFixed(1)}%</span>
+            </td>
+            <td><button class="btn btn-ghost btn-sm" onclick="openOpsLimitModal('${c.client_id}')">Edit Limit</button></td>
+          </tr>`;
+        }).join('')
+      : '<tr><td colspan="6" class="text-center text-muted" style="padding:20px">No clients found</td></tr>';
+  } catch(e) { Toast.error('Load clients failed: ' + e.message); }
+}
+
+function openOpsLimitModal(clientId) {
+  const c = clients.find(c => String(c.client_id) === String(clientId));
+  if (!c) return;
+  _opsEditClientId = clientId;
+  document.getElementById('ops-limit-client-name').textContent = c.company_name;
+  document.getElementById('ops-limit-current').textContent = fmt(Number(c.credit_limit) || 0);
+  document.getElementById('ops-limit-input').value = Number(c.credit_limit) || '';
+  openModal('modal-ops-credit-limit');
+}
+
+async function saveOpsClientLimit() {
+  const newLimit = parseFloat(document.getElementById('ops-limit-input').value);
+  if (!_opsEditClientId) return;
+  if (isNaN(newLimit) || newLimit < 0) return Toast.error('Enter a valid credit limit');
+  try {
+    const res = await API.call('UPDATE_CLIENT_LIMIT', { clientId: _opsEditClientId, newLimit });
+    Toast.success(`Credit limit updated: ${fmt(res.oldLimit)} → ${fmt(res.newLimit)}`);
+    closeModal('modal-ops-credit-limit');
+    loadOpsClients();
+  } catch(e) { Toast.error(e.message); }
 }
 
 // ── Boot ───────────────────────────────────────────────────────
