@@ -1,9 +1,21 @@
 <!DOCTYPE html>
 <!-- ============================================================
      admin.html
-     Version : 3.0
+     Version : 3.1
      Updated : 2026-04-15
-     Changes : Fix AD9 — init() replaced 2 sequential API calls
+     Changes : Fix AD10 — Performance fixes across all 7 admin tabs:
+               (1) saveAllSettings: removed redundant GET_ALL_SETTINGS reload
+                   after save — updates allSettings in memory instead.
+               (2) Notifications: removed loadNotifications() from init() —
+                   only fires when tab opens. Fixed double sheet read in
+                   getAllNotificationsAdmin() — 2 reads → 1.
+               (3) User Management: in-memory cache _usersCache — skip
+                   GET_ALL_USERS on repeat tab visits.
+               (4) Costing Rules: post-mutate loadCosting() replaced with
+                   in-memory array update + local re-render.
+               (5) Clients: loadClientManagement() uses allClients from
+                   memory on first open; only re-fetches on Refresh.
+     Previous: Fix AD9 — init() replaced 2 sequential API calls
                (GET_ALL_SETTINGS + GET_ALL_CLIENTS) with 1 batch call
                GET_ADMIN_INIT. Reduces admin page load latency by ~600ms.
      Previous: Fix AD8 — Client Management tab added to Admin portal.
@@ -236,7 +248,10 @@ document.addEventListener('DOMContentLoaded', function() {
     <div id="tab-users" class="hidden">
       <div class="topbar">
         <h1>User Management</h1>
-        <button class="btn btn-primary" onclick="openModal('modal-new-user')">+ Create User</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="_usersCache=null;loadAllUsers()">↻ Refresh</button>
+          <button class="btn btn-primary" onclick="openModal('modal-new-user')">+ Create User</button>
+        </div>
       </div>
 
       <div class="tab-bar" style="margin-bottom:16px">
@@ -480,7 +495,7 @@ document.addEventListener('DOMContentLoaded', function() {
     <div id="tab-clients" class="hidden">
       <div class="topbar">
         <h1>Client Management</h1>
-        <button class="btn btn-ghost btn-sm" onclick="loadClientManagement()">↻ Refresh</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadClientManagement(true)">↻ Refresh</button>
       </div>
       <div class="card">
         <div class="tbl-wrap">
@@ -754,7 +769,7 @@ async function init() {
     actEntities.OPS = allClients.map(c => ({ id: c.client_id, label: c.company_name }));
   } catch(e) { Toast.error('Failed to load admin settings: ' + e.message); }
   renderPermMatrix();
-  loadNotifications();
+  // Fix AD10(2): loadNotifications() removed from init — fires only when tab opens
 }
 
 function showTab(tab) {
@@ -816,7 +831,12 @@ async function saveAllSettings() {
   try {
     await API.call('BULK_UPDATE_SETTINGS', { settings });
     Toast.success('Settings saved successfully');
-    loadSettings();
+    // Fix AD10(1): update allSettings in memory — no extra GET_ALL_SETTINGS call
+    settings.forEach(s => {
+      const existing = allSettings.find(x => x.key === s.key);
+      if (existing) existing.value = s.value;
+    });
+    renderSettingsTable();
   } catch(e) { Toast.error('Save failed: ' + e.message); }
 }
 
@@ -830,10 +850,25 @@ async function loadClients() {
 }
 
 // ── Users ──────────────────────────────────────────────────────
+// Fix AD10(3): _usersCache avoids re-fetching on repeat tab visits.
+// Cleared by explicit Refresh button only.
+let _usersCache = null;
+
 // Fix AD1: GET_ALL_USERS batch route — reads all 3 user sheets in 1 API call
-async function loadAllUsers() {
+async function loadAllUsers(forceRefresh) {
+  if (_usersCache && !forceRefresh) {
+    _renderUserTables(_usersCache);
+    return;
+  }
   try {
     const res = await API.call('GET_ALL_USERS');
+    _usersCache = res;
+    _renderUserTables(res);
+  } catch(e) { Toast.error('Load users failed: ' + e.message); }
+}
+
+function _renderUserTables(res) {
+  try {
     const fmtActive = (v) => (v === true || v === 'TRUE' || v === 1)
       ? '<span class="badge badge-green">Active</span>'
       : '<span class="badge badge-red">Inactive</span>';
@@ -871,7 +906,7 @@ async function loadAllUsers() {
         </tr>`).join('')
       : '<tr><td colspan="5" class="text-center text-muted" style="padding:16px">No investor users found</td></tr>';
 
-  } catch(e) { Toast.error('Load users failed: ' + e.message); }
+  } catch(e) { Toast.error('Render users failed: ' + e.message); }
 }
 
 function switchUserTab(tab, el) {
@@ -1242,10 +1277,20 @@ async function doSaveTemplate() {
   if (!templateName) return Toast.error('Template name required');
   if (isNaN(maxAdvanceRate)) return Toast.error('Max advance rate required');
   try {
-    await API.call('SAVE_TEMPLATE', { templateId, templateName, status, maxAdvanceRate, minMarginRate, effectiveFrom, effectiveTo, notes });
+    const res = await API.call('SAVE_TEMPLATE', { templateId, templateName, status, maxAdvanceRate, minMarginRate, effectiveFrom, effectiveTo, notes });
     closeModal('modal-tpl');
     Toast.success('Template saved');
-    await loadCosting();
+    // Fix AD10(4): update in memory, skip full GET_COSTING_INIT reload
+    if (templateId) {
+      const idx = costingTemplates.findIndex(t => String(t.template_id) === String(templateId));
+      const updated = { template_id: templateId, template_name: templateName, status, max_advance_rate: maxAdvanceRate, min_margin_rate: minMarginRate, effective_from: effectiveFrom, effective_to: effectiveTo, notes };
+      if (idx >= 0) costingTemplates[idx] = { ...costingTemplates[idx], ...updated };
+      else costingTemplates.push({ ...updated, template_id: res.templateId || templateId });
+    } else {
+      await loadCosting(); // new template — need server-assigned ID
+      return;
+    }
+    renderTemplateTable();
   } catch(e) { Toast.error(e.message); }
 }
 
@@ -1469,11 +1514,19 @@ async function doSaveRule() {
   if (!templateId) return Toast.error('No template selected');
   if (!ruleName)   return Toast.error('Rule name required');
   try {
-    await API.call('SAVE_RULE', { ruleId, templateId, ruleName, feeType, calcMethod,
+    const rRes = await API.call('SAVE_RULE', { ruleId, templateId, ruleName, feeType, calcMethod,
       parameters: paramsRaw, appliesToBase, sequenceOrder, isMandatory });
     closeModal('modal-rule');
     Toast.success('Rule saved');
-    await loadCosting();
+    // Fix AD10(4): update costingRules in memory
+    const updRule = { rule_id: ruleId || rRes.ruleId, template_id: templateId, rule_name: ruleName,
+      fee_type: feeType, calc_method: calcMethod, parameters: paramsRaw,
+      applies_to_base: appliesToBase, sequence_order: sequenceOrder, is_mandatory: isMandatory, is_active: true };
+    if (ruleId) {
+      const ri = costingRules.findIndex(r => String(r.rule_id) === String(ruleId));
+      if (ri >= 0) costingRules[ri] = { ...costingRules[ri], ...updRule };
+      else costingRules.push(updRule);
+    } else { costingRules.push(updRule); }
     if (selectedTplId) renderRulesTable();
   } catch(e) { Toast.error(e.message); }
 }
@@ -1482,7 +1535,9 @@ async function doToggleRule(ruleId) {
   try {
     const res = await API.call('TOGGLE_RULE', { ruleId });
     Toast.success('Rule ' + (res.is_active ? 'enabled' : 'disabled'));
-    await loadCosting();
+    // Fix AD10(4): toggle in memory
+    const tr = costingRules.find(r => String(r.rule_id) === String(ruleId));
+    if (tr) tr.is_active = res.is_active;
     if (selectedTplId) renderRulesTable();
   } catch(e) { Toast.error(e.message); }
 }
@@ -1492,7 +1547,8 @@ async function doDeleteRule(ruleId, ruleName) {
   try {
     await API.call('DELETE_RULE', { ruleId });
     Toast.success('Rule deleted');
-    await loadCosting();
+    // Fix AD10(4): remove from memory
+    costingRules = costingRules.filter(r => String(r.rule_id) !== String(ruleId));
     if (selectedTplId) renderRulesTable();
   } catch(e) { Toast.error(e.message); }
 }
@@ -1504,7 +1560,11 @@ async function doAssignTemplate() {
   try {
     await API.call('ASSIGN_TEMPLATE', { clientId, templateId });
     Toast.success('Template assigned successfully');
-    await loadCosting();
+    // Fix AD10(4): update allClients in memory, re-render
+    const ac = allClients.find(c => String(c.client_id) === String(clientId));
+    if (ac) ac.active_template_id = templateId;
+    renderTemplateTable();
+    populateCostingAssignDropdowns();
   } catch(e) { Toast.error(e.message); }
 }
 
@@ -1557,12 +1617,15 @@ async function runFeeSimulator() {
 // but we re-fetch here to ensure fresh data when tab opens.
 let _editClientId = null;
 
-async function loadClientManagement() {
+async function loadClientManagement(forceRefresh) {
   document.getElementById('clients-mgmt-tbody').innerHTML =
     '<tr class="loading-row"><td colspan="8">Loading…</td></tr>';
   try {
-    const res = await API.call('GET_ALL_CLIENTS');
-    allClients = res.clients || [];
+    // Fix AD10(5): use allClients already loaded at init; only re-fetch on Refresh
+    if (!allClients.length || forceRefresh) {
+      const res = await API.call('GET_ALL_CLIENTS');
+      allClients = res.clients || [];
+    }
     const rows = allClients;
     document.getElementById('clients-mgmt-tbody').innerHTML = rows.length
       ? rows.map(c => {
@@ -1606,7 +1669,10 @@ async function saveCreditLimit() {
     const res = await API.call('UPDATE_CLIENT_LIMIT', { clientId: _editClientId, newLimit });
     Toast.success(`Credit limit updated: ${fmt(res.oldLimit)} → ${fmt(res.newLimit)}`);
     closeModal('modal-credit-limit');
-    loadClientManagement();
+    // Fix AD10(5): update in memory — no extra API call
+    const c = allClients.find(c => String(c.client_id) === String(_editClientId));
+    if (c) c.credit_limit = res.newLimit;
+    loadClientManagement(); // re-renders from memory, no fetch
   } catch(e) { Toast.error(e.message); }
 }
 
