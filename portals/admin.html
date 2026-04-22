@@ -1,9 +1,14 @@
 <!DOCTYPE html>
 <!-- ============================================================
      admin.html
-     Version : 2.7
+     Version : 2.8
      Updated : 2026-04-15
-     Changes : Fix AD4 — Notifications KPI cards (Total/Sent/Failed/Pending) now
+     Changes : Fix AD7 — BLOCK_RATE rule editor: Block 2 Unit Days field
+               added so users can specify any unit period (not just 10).
+               toParams() writes block2_unit_days + prorate_unit_days.
+               fromParams() restores it. formatParams() shows both B1/B2
+               rate and unit days. Derive hint updated dynamically.
+     Previous: Fix AD4 — Notifications KPI cards (Total/Sent/Failed/Pending) now
                render horizontally via flex row on container + flex:1 on each card.
      Previous: Fix AD3 — loadAllUsers(): getClientName() not defined in admin.html;
                replaced with inline allClients.find() lookup.
@@ -1110,7 +1115,7 @@ function formatParams(method, paramsRaw) {
     if (method === 'PCT_OF_PO')        return 'Rate: ' + (p.rate||'—') + '%';
     if (method === 'PCT_OF_FINANCED')  return 'Rate: ' + (p.rate||'—') + '%';
     if (method === 'DAILY_RATE')       return 'Rate: ' + (p.rate||'—') + '%/day';
-    if (method === 'BLOCK_RATE')       return 'B1: ' + (p.block1_rate||'—') + '% / B2: ' + (p.block2_rate||'—') + '%';
+    if (method === 'BLOCK_RATE')       return 'B1: ' + (p.block1_rate||'—') + '%/' + (p.block_days||30) + 'd  B2: ' + (p.block2_rate||'—') + '%/' + (p.block2_unit_days||10) + 'd';
     if (method === 'FACTOR_RATE')      return 'Factor: ' + (p.factor||'—');
     return JSON.stringify(p);
   } catch(_) { return String(paramsRaw||''); }
@@ -1223,54 +1228,57 @@ const PARAM_DEFS = {
     },
   },
   BLOCK_RATE: {
-    desc: 'Tiered fee by time blocks. Block 1 covers the first N days; Block 2 covers any additional days beyond that.',
+    desc: 'Tiered fee by time blocks. Block 1 covers the first N days (flat charge). Block 2 charges per unit period beyond that.',
     fields: [
-      { id:'p-block1-rate', label:'Block 1 Rate (%)', type:'number', placeholder:'2.15', hint:'Fee % charged for the entire Block 1 period (e.g. 2.15% on financed amount)', step:'0.001', min:'0' },
-      { id:'p-block-days',  label:'Block 1 Days',     type:'number', placeholder:'30',   hint:'How many days Block 1 covers (e.g. 30)', step:'1', min:'1' },
-      { id:'p-block2-rate', label:'Block 2 Rate (%) per 10-day unit', type:'number', placeholder:'0.717', hint:'Fee % per 10-day unit beyond Block 1. Ignored when Derive is checked.', step:'0.001', min:'0' },
-      { id:'p-derive',      label:'Derive Block 2 rate from Block 1 (divide by 3)', type:'checkbox', hint:'Block 2 rate = Block 1 rate / 3 rounded to 3 decimal places. Overrides the Block 2 rate field above.' },
+      { id:'p-block1-rate',     label:'Block 1 Rate (%)',      type:'number',   placeholder:'2.10',  hint:'Fee % charged flat for the entire Block 1 period (e.g. 2.10% on financed amount)', step:'0.001', min:'0' },
+      { id:'p-block-days',      label:'Block 1 Days',          type:'number',   placeholder:'30',    hint:'How many days Block 1 covers (e.g. 30)', step:'1', min:'1' },
+      { id:'p-block2-rate',     label:'Block 2 Rate (%) per unit', type:'number', placeholder:'1.05', hint:'Fee % per unit period beyond Block 1. Ignored when Derive is checked.', step:'0.001', min:'0' },
+      { id:'p-block2-unitdays', label:'Block 2 Unit Days',     type:'number',   placeholder:'15',    hint:'Length of each Block 2 unit in days (e.g. 15 = charged per 15-day unit). Partial units charged as 1 full unit.', step:'1', min:'1' },
+      { id:'p-derive',          label:'Derive Block 2 rate from Block 1', type:'checkbox', hint:'Block 2 rate = Block 1 rate ÷ (Block 1 Days ÷ Block 2 Unit Days), rounded to 3 decimal places. Overrides the Block 2 rate field above.' },
     ],
     toParams: () => {
       const b1El  = document.getElementById('p-block1-rate');
       const bdEl  = document.getElementById('p-block-days');
       const b2El  = document.getElementById('p-block2-rate');
+      const b2uEl = document.getElementById('p-block2-unitdays');
       const derEl = document.getElementById('p-derive');
       if (!b1El) throw new Error('Parameter fields not rendered -- please reopen the modal');
       const block1Rate    = parseFloat(b1El.value)  || 0;
       const blockDays     = parseInt(bdEl.value)    || 30;
       const block2Rate    = parseFloat(b2El.value)  || 0;
+      const block2UnitDays = parseInt(b2uEl.value)  || 10;
       const deriveFromB1  = derEl.checked;
-      // Build the blocks[] structure the engine expects
       return {
         block1_rate:        block1Rate,
         block_days:         blockDays,
         block2_rate:        block2Rate,
+        block2_unit_days:   block2UnitDays,
         derive_from_block1: deriveFromB1,
         blocks: [
           {
-            block_days:        blockDays,
-            rate_pct:          block1Rate,
-            prorate_unit_days: null,   // flat block — whole period charged once
-            min_charge:        true,
+            block_days:         blockDays,
+            rate_pct:           block1Rate,
+            prorate_unit_days:  null,            // flat block — whole period charged once
+            min_charge:         true,
             derive_from_block1: false,
           },
           {
-            block_days:        9999,   // open-ended second block
-            rate_pct:          block2Rate,
-            prorate_unit_days: 10,     // per 10-day unit
-            min_charge:        true,
+            block_days:         9999,            // open-ended second block
+            rate_pct:           block2Rate,
+            prorate_unit_days:  block2UnitDays,  // user-specified unit period
+            min_charge:         true,
             derive_from_block1: deriveFromB1,
           },
         ],
       };
     },
     fromParams: (p) => {
-      // Support both new format (has blocks[]) and old flat format
-      const b = (p.blocks && p.blocks[0]) || {};
-      document.getElementById('p-block1-rate').value = p.block1_rate || b.rate_pct || '';
-      document.getElementById('p-block-days').value  = p.block_days  || b.block_days || 30;
+      const b  = (p.blocks && p.blocks[0]) || {};
       const b2 = (p.blocks && p.blocks[1]) || {};
-      document.getElementById('p-block2-rate').value = p.block2_rate || b2.rate_pct || '';
+      document.getElementById('p-block1-rate').value     = p.block1_rate      || b.rate_pct            || '';
+      document.getElementById('p-block-days').value      = p.block_days       || b.block_days           || 30;
+      document.getElementById('p-block2-rate').value     = p.block2_rate      || b2.rate_pct            || '';
+      document.getElementById('p-block2-unitdays').value = p.block2_unit_days || b2.prorate_unit_days   || 10;
       const derive = p.derive_from_block1 === true || p.derive_from_block1 === 'true'
         || (b2 && (b2.derive_from_block1 === true || b2.derive_from_block1 === 'true'));
       document.getElementById('p-derive').checked = derive;
